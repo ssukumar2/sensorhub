@@ -10,7 +10,7 @@ communication and MQTT ingestion.
 
 ## Current status
 
-* basic REST backend with SQLite persistence.**
+* Refactor database module for testability.**
 
 Working endpoints:
 
