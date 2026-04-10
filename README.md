@@ -10,7 +10,7 @@ communication and MQTT ingestion.
 
 ## Current status
 
-**Day 1 — basic REST backend with SQLite persistence.**
+* basic REST backend with SQLite persistence.**
 
 Working endpoints:
 

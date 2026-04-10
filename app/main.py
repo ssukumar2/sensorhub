@@ -40,7 +40,7 @@ app = FastAPI(
 @app.get("/health")
 def health():
     """Simple liveness probe. Useful for Docker/Kubernetes later."""
-    return {"status": "ok", "service": "beaconnet", "version": "0.1.0"}
+    return {"status": "ok", "service": "sensorhub", "version": "0.1.0"}
 
 
 # -------- Sensors --------
