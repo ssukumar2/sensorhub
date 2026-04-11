@@ -6,7 +6,7 @@ as `beaconnet.db` the first time the app runs.
 """
 from sqlmodel import SQLModel, create_engine, Session
 
-DATABASE_URL = "sqlite:///./sensorhub.db"
+#DATABASE_URL = "sqlite:///./sensorhub.db"
 
 # echo=False so we don't spam the terminal with SQL.
 # Set it to True temporarily if you want to see every query.

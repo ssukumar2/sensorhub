@@ -1,13 +1,12 @@
 """
-beaconnet — secure sensor network gateway.
+SensorHUb — secure sensor network gateway.
 
-Day 1: basic REST API to register sensors and submit/query readings.
-Persistence is SQLite via SQLModel. No authentication yet — that comes next.
 """
+import secrets
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from sqlmodel import Session, select
 
 from app.database import init_db, get_session
@@ -42,6 +41,18 @@ def health():
     """Simple liveness probe. Useful for Docker/Kubernetes later."""
     return {"status": "ok", "service": "sensorhub", "version": "0.1.0"}
 
+def require_sensor_key(
+    sensor_id: int,
+    x_api_key: str = Header(..., description="Sensor API key"),
+    session: Session = Depends(get_session),
+) -> Sensor:
+    """Verify the API key matches the sensor. Returns the sensor on success."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    return sensor
 
 # -------- Sensors --------
 
@@ -78,13 +89,21 @@ def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
 @app.post("/readings", response_model=Reading, status_code=201)
 def submit_reading(
     payload: ReadingCreate,
+    #sensor: Sensor = Depends(require_sensor_key),
+    x_api_key: str = Header(..., description="Sensor API key"),
     session: Session = Depends(get_session),
 ):
     """Submit a telemetry reading from a sensor."""
     # Check the sensor exists before inserting the reading.
+    #sensor = session.get(Sensor, payload.sensor_id)
+    #if sensor is None:
+      #  raise HTTPException(status_code=404, detail="sensor not found")
+
     sensor = session.get(Sensor, payload.sensor_id)
     if sensor is None:
         raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
 
     reading = Reading(
         sensor_id=payload.sensor_id,
@@ -115,3 +134,4 @@ def list_readings_for_sensor(
         .limit(limit)
     )
     return session.exec(statement).all()
+

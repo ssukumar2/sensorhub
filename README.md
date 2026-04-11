@@ -4,43 +4,33 @@ A small, experimental secure sensor network gateway. Sensors register with the
 gateway, submit telemetry readings, and a REST API exposes the data for
 querying.
 
-This is a learning project — I'm building it to explore backend design, IoT
+This is a learning project: I'm building it to explore backend design, IoT
 ingestion patterns, and (in later iterations) authenticated device
 communication and MQTT ingestion.
 
-## Current status
-
-* Refactor database module for testability.**
-
 Working endpoints:
 
-- `GET  /health` — liveness probe
-- `POST /sensors` — register a new sensor
-- `GET  /sensors` — list all sensors
-- `GET  /sensors/{id}` — get one sensor
-- `POST /readings` — submit a telemetry reading
-- `GET  /sensors/{id}/readings` — list recent readings for a sensor
+ `GET  /health` : liveness probe
+ `POST /sensors` : register a new sensor
+ `GET  /sensors` : list all sensors
+ `GET  /sensors/{id}` : get one sensor
+`POST /readings` : submit a telemetry reading `   (requires x-api-key header)
+- `GET  /sensors/{id}/readings`: list recent readings for a sensor
 
-No authentication yet. That's coming next.
+# Status Progress
+No authentication yet.
+progress update: Basic API key authentication is in place: each sensor gets its own key, and readings require the correct key in the `x-api-key` header.
 
-## Planned next steps
 
-- HMAC-based device authentication (shared key per sensor)
-- Replay protection with nonces and timestamps
-- MQTT ingestion alongside HTTP
-- Simulated sensor clients in Python and C
-- A small dashboard (TypeScript / React) for live data
-- Threat model document
+# Stack
 
-## Stack
+ Python 3.8+
+ FastAPI
+SQLModel (SQLAlchemy + Pydantic)
+SQLite
+ Uvicorn
 
-- Python 3.8+
-- FastAPI
-- SQLModel (SQLAlchemy + Pydantic)
-- SQLite
-- Uvicorn
-
-## Running it locally
+# Running it locally
 
 ```bash
 git clone git@github.com:ssukumar2/sensorhub.git

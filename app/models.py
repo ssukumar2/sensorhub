@@ -9,6 +9,7 @@ Kept deliberately small for day 1. We'll add authentication fields later.
 """
 from datetime import datetime
 from typing import Optional
+import secrets
 
 from sqlmodel import Field, SQLModel
 
@@ -20,6 +21,7 @@ class Sensor(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     location: str
+    api_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32), index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
