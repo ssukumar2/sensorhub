@@ -20,7 +20,8 @@ Working endpoints:
 # Status Progress
 No authentication yet.
 progress update: Basic API key authentication is in place: each sensor gets its own key, and readings require the correct key in the `x-api-key` header.
-
+The project now has a Python backend and a C++ sensor simulator
+The C++ client registers as a sensor and sends random readings every 5 seconds
 
 # Stack
 
@@ -29,6 +30,7 @@ progress update: Basic API key authentication is in place: each sensor gets its 
 SQLModel (SQLAlchemy + Pydantic)
 SQLite
  Uvicorn
+C++ client
 
 # Running it locally
 
