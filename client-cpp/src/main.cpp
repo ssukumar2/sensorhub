@@ -17,9 +17,10 @@ void handle_sigint(int)
     keep_running = 0;
 }
 
-int main() 
+int main( int argc, char* argv[]) 
 {
      std::signal(SIGINT, handle_sigint);
+     
     //std::cout << "hello, sensorhub" << std::endl;
    
     // std::cout << "sending GET /health to backend..." << std::endl;
@@ -40,7 +41,17 @@ int main()
     //     return 1;
     // }
     
-    const std::string backend_url = "http://localhost:8000";
+    //const std::string backend_url = "http://localhost:8000";
+
+    std::string backend_url = "http://localhost:8000";
+
+    if (argc >= 2) 
+    {
+        backend_url = argv[1];
+    }
+
+    std::cout << "using backend: " << backend_url << std::endl;
+
     const int interval_seconds = 5;
 
     // Step A: health check
