@@ -19,5 +19,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(cpr)
 
 # Our executable
-add_executable(sensor_client src/main.cpp)
+add_executable(sensor_client 
+src/main.cpp
+src/backend_client.cpp
+)
+
+target_include_directories(sensor_client PRIVATE inc)
+
 target_link_libraries(sensor_client PRIVATE cpr::cpr nlohmann_json::nlohmann_json)
