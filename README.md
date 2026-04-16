@@ -86,11 +86,6 @@ Planned next:
 - Dashboard frontend in React/TypeScript
 - Yocto deployment (separate companion repo)
 
-## Companion projects
-
-- [sensorhub-yocto](https://github.com/ssukumar2/sensorhub-yocto) — Yocto layer to deploy the C++ client on embedded Linux
-- [oxideflow](https://github.com/ssukumar2/oxideflow) — Rust sensor client
-- [wirecap](https://github.com/ssukumar2/wirecap) — C# sensor client
 
 ## License
 

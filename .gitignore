@@ -11,6 +11,7 @@ env/
 dist/
 build/
 
+
 # Database
 *.db
 *.sqlite
@@ -29,3 +30,4 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
