@@ -1,4 +1,7 @@
-#include <backend_client.hpp>
+#include "backend_client.hpp"
+#include "hmac_signer.hpp"
+#include "nonce_generator.hpp"
+
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -6,10 +9,8 @@
 
 using json = nlohmann::json;
 
-BackendClient::BackendClient(std::string backend_url)
-    : backend_url_(std::move(backend_url)) 
-{
-}
+BackendClient::BackendClient(std::string backend_url) : backend_url_(std::move(backend_url)) 
+{}
 
 bool BackendClient::check_health() 
 {
@@ -32,10 +33,13 @@ SensorIdentity BackendClient::register_sensor(const std::string& name, const std
 
     if (r.status_code != 201) 
     {
-        throw std::runtime_error("sensor registration failed, status=" + std::to_string(r.status_code) + " body=" + r.text);
+        throw std::runtime_error("sensor registration failed, status=" +
+                                 std::to_string(r.status_code) +
+                                 " body=" + r.text);
     }
 
     json response = json::parse(r.text);
+    
     return SensorIdentity{response["id"], response["api_key"]};
 }
 
@@ -47,13 +51,27 @@ bool BackendClient::submit_reading(const SensorIdentity& sensor, double value, c
         {"unit", unit}
     };
 
+    std::string payload = body.dump();
+
+    // Security: HMAC sign the payload with the API key
+    HmacSigner signer(sensor.api_key);
+    std::string nonce = NonceGenerator::generate_nonce();
+    std::string ts = NonceGenerator::timestamp();
+
+    // Sign: payload + nonce + timestamp
+    std::string sign_input = payload + nonce + ts;
+    std::string signature = signer.sign(sign_input);
+
     cpr::Response r = cpr::Post(
         cpr::Url{backend_url_ + "/readings"},
         cpr::Header{
             {"Content-Type", "application/json"},
-            {"x-api-key", sensor.api_key}
+            {"x-api-key", sensor.api_key},
+            {"x-signature", signature},
+            {"x-nonce", nonce},
+            {"x-timestamp", ts}
         },
-        cpr::Body{body.dump()}
+        cpr::Body{payload}
     );
 
     return r.status_code == 201;
