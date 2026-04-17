@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(nlohmann_json 3.2 REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 include(FetchContent)
 
@@ -33,6 +34,7 @@ add_executable(sensor_client
     src/main.cpp
     src/backend_client.cpp
     src/mqtt_client.cpp
+    src/hmac_signer.cpp
 )
 
 target_include_directories(sensor_client PRIVATE
@@ -44,4 +46,5 @@ target_link_libraries(sensor_client PRIVATE
     cpr::cpr
     nlohmann_json::nlohmann_json
     paho-mqtt3a-static
+    OpenSSL::Crypto
 )
