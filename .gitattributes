@@ -1,0 +1,5 @@
+# Make sure C++ and CMake are recognized
+*.cpp linguist-language=C++
+*.hpp linguist-language=C++
+*.h linguist-language=C++
+CMakeLists.txt linguist-language=CMake
