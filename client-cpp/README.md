@@ -1,42 +1,38 @@
-# sensor-client
+# sensorhub C++ client
 
-C++ simulator that acts as a sensor device. Connects to the sensorhub backend,
-registers itself, and pushes fake telemetry readings.
+A C++ program that simulates a real sensor device. It connects to the sensorhub backend, registers itself, gets an API key, and starts sending temperature readings every 5 seconds. Works over both HTTP and MQTT.
 
 ## Building
 
-Open `client-cpp/` :
+From the client-cpp directory:
 
     cmake -B build
     cmake --build build
 
 ## Running
 
-    ./build/sensor_client
+HTTP mode (default):
+
+    ./build/sensor_client --mode=http
+
+MQTT mode (needs Mosquitto broker running): cd sensor_client (again)
+
+    ./build/sensor_client --mode=mqtt
+
+Custom backend URL:
+
+    ./build/sensor_client --backend=http://192.168.1.50:8000
+
+## How it works
+
+The client goes through these steps on startup:
+
+1. Checks if the backend is healthy
+2. Registers a new sensor and receives an API key
+3. Starts a loop sending random temperature readings every 5 seconds
+4. Each reading is signed with HMAC-SHA256 for integrity
+5. Press Ctrl+C to stop cleanly
 
 ## Security
 
-The system implements layered security for sensor communication:
-
-**Authentication:**
-- Each sensor gets a unique API key on registration
-- Readings require the correct key in the `x-api-key` header
-- Server uses constant-time comparison to prevent timing attacks
-
-**Integrity (HMAC signing):**
-- C++ client signs every reading payload with HMAC-SHA256
-- Signature covers: JSON body + nonce + timestamp
-- Server verifies the signature if present
-- Tampering with the payload, nonce, or timestamp invalidates the signature
-
-**Replay protection:**
-- Each request carries a unique random nonce (128-bit hex)
-- Each request carries a unix timestamp
-- Server rejects requests older than 30 seconds
-- Prevents captured requests from being replayed later
-
-**Planned:**
-- TLS for HTTP and MQTT transport
-- MQTT username/password and client certificate authentication
-- Per-sensor rate limiting
-- Audit logging of authentication events
+Every reading the client sends is protected with API key authentication, HMAC-SHA256 signatures covering the payload with a unique nonce and timestamp, and constant-time comparison on the server side to prevent timing attacks. The server rejects any request with a tampered payload or a timestamp older than 30 seconds.

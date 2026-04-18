@@ -1,61 +1,53 @@
+![Python Tests](https://github.com/ssukumar2/sensorhub/actions/workflows/python-tests.yml/badge.svg)
+
 # sensorhub
 
-A small experimental IoT sensor gateway. Sensors register with the backend, submit telemetry readings, and a REST API exposes the data for querying. The system supports both HTTP and MQTT transport, with API key authentication on sensor readings.
+An IoT sensor gateway that receives telemetry data from sensor devices, stores it in a database, and exposes it through a REST API. Sensors register with the backend, get an API key, and then submit readings over HTTP or MQTT. Both transport paths end up in the same SQLite database.
 
-This is a learning project I'm building to sharpen my skills in backend design, IoT ingestion patterns, authenticated device communication, and multi-language systems integration.
+I built this to explore how IoT backends work in practice — device registration, authenticated ingestion, dual transport, and the interplay between a Python backend and a C++ device client.
 
-## Architecture
+## How it works
 
-The project is a monorepo with two main components:
+The backend is a Python FastAPI server with SQLite storage. The client is a C++ program that pretends to be a real sensor — it registers itself, gets a key, and starts sending fake temperature readings every 5 seconds.
 
-- **Python backend** (FastAPI + SQLModel + SQLite) that handles sensor registration, reading ingestion over both HTTP REST and MQTT, and data querying
-- **C++ sensor simulator client** that registers itself, obtains an API key, and publishes temperature readings either over HTTP or MQTT
-
-Both transport paths write into the same SQLite database, so the backend is agnostic to how readings arrive.
+You can run the client in HTTP mode (direct REST calls) or MQTT mode (publishes to a Mosquitto broker, and a Python subscriber picks up the messages and writes them to the database). Either way, the data ends up in the same place and is queryable through the same API.
 
 ## Endpoints
 
-- `GET /health` — liveness probe
-- `POST /sensors` — register a new sensor and receive an API key
-- `GET /sensors` — list all registered sensors
-- `GET /sensors/{id}` — get details of one sensor
-- `POST /readings` — submit a telemetry reading (requires `x-api-key` header)
-- `GET /sensors/{id}/readings` — list recent readings for a sensor
-
-## Transport options
-
-- **HTTP REST** with API key authentication via `x-api-key` header
-- **MQTT** over a Mosquitto broker, topic pattern `sensorhub/sensors/{id}/readings`
+- `GET /health` — check if the backend is running
+- `POST /sensors` — register a new sensor, get back an API key
+- `GET /sensors` — list all sensors
+- `GET /sensors/{id}` — get one sensor's details
+- `POST /readings` — submit a reading (needs the x-api-key header)
+- `GET /sensors/{id}/readings` — get recent readings for a sensor
 
 ## Stack
 
-- Python 3.8+ with FastAPI, SQLModel, SQLite, Uvicorn, paho-mqtt
-- C++17 client with cpr (HTTP) and Eclipse Paho (MQTT)
-- CMake build system with FetchContent for dependencies
+- Python 3.8+, FastAPI, SQLModel, SQLite, Uvicorn, paho-mqtt
+- C++17 client with cpr, Eclipse Paho MQTT, nlohmann/json
+- CMake with FetchContent for C++ dependencies
 - Mosquitto MQTT broker
 - pytest for backend tests
+- GitHub Actions CI
 
-## Running it locally
+## Running it
 
-Install Mosquitto if you want to try MQTT:
+Install Mosquitto if you want MQTT:
 
     sudo apt install mosquitto mosquitto-clients
 
-Clone and set up the Python side:
+Set up the Python backend:
 
     git clone git@github.com:ssukumar2/sensorhub.git
     cd sensorhub
     python3 -m venv .venv
     source .venv/bin/activate
     pip install -r requirements.txt
-
-Run the backend:
-
     uvicorn app.main:app --reload
 
-Then open http://localhost:8000/docs for the interactive API docs.
+Open http://localhost:8000/docs to see the API.
 
-To run the MQTT subscriber in a separate terminal:
+For MQTT, run the subscriber in a separate terminal:
 
     python3 -m app.mqtt.subscriber
 
@@ -64,28 +56,14 @@ Build and run the C++ client:
     cd client-cpp
     cmake -B build && cmake --build build
     ./build/sensor_client --mode=http
-    # or in MQTT mode:
+    # or
     ./build/sensor_client --mode=mqtt
 
 ## Tests
 
     pytest tests/ -v
 
-## Status
-
-Working:
-- HTTP REST with API key authentication
-- MQTT ingestion alongside HTTP, both writing to the same database
-- C++ client with BackendClient and MqttClient classes
-- pytest suite covering the main endpoints
-
-Planned next:
-- GitHub Actions CI/CD for backend tests and C++ build
-- Replay protection and HMAC-signed requests
-- TLS for HTTP and MQTT
-- Dashboard frontend in React/TypeScript
-- Yocto deployment (separate companion repo)
-
+Six tests covering health check, sensor registration, API key authentication, and reading submission.
 
 ## License
 
