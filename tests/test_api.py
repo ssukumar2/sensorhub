@@ -1,10 +1,13 @@
 """Tests for the sensorhub REST API."""
 from fastapi.testclient import TestClient
 
+from app.database import init_db
 from app.main import app
 
-client = TestClient(app)
+# Create tables before any tests run
+init_db()
 
+client = TestClient(app)
 
 def test_health_returns_ok():
     response = client.get("/health")
