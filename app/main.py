@@ -17,6 +17,10 @@ from app.models import (
     ReadingCreate,
 )
 
+import time as _time
+
+_start_time = _time.time()
+_request_count = 0
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,6 +57,18 @@ def require_sensor_key(
     if not secrets.compare_digest(sensor.api_key, x_api_key):
         raise HTTPException(status_code=401, detail="invalid api key")
     return sensor
+
+@app.get("/metrics")
+def metrics():
+    """Basic server metrics for monitoring."""
+    global _request_count
+    _request_count += 1
+    uptime = int(_time.time() - _start_time)
+    return {
+        "uptime_seconds": uptime,
+        "request_count": _request_count,
+        "service": "sensorhub",
+    }
 
 # -------- Sensors --------
 
