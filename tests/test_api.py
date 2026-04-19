@@ -76,3 +76,11 @@ def test_submit_reading_with_wrong_key():
         headers={"x-api-key": "wrong-key-12345"},
     )
     assert response.status_code == 401
+
+def test_metrics_returns_uptime():
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    body = response.json()
+    assert "uptime_seconds" in body
+    assert "request_count" in body
+    assert body["service"] == "sensorhub"   
