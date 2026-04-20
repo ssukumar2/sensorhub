@@ -35,10 +35,12 @@ add_executable(sensor_client
     src/backend_client.cpp
     src/mqtt_client.cpp
     src/hmac_signer.cpp
+    lib/sensorproto/sensor_message.cpp
 )
 
 target_include_directories(sensor_client PRIVATE
     inc
+    lib/sensorproto
     ${paho-mqtt-c_SOURCE_DIR}/src
 )
 
