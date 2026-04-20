@@ -4,6 +4,17 @@ from fastapi.testclient import TestClient
 from app.database import init_db
 from app.main import app
 
+from app.security import (
+    generate_api_key,
+    constant_time_compare,
+    compute_hmac,
+    verify_hmac,
+    is_timestamp_fresh,
+    generate_nonce,
+)
+import time
+
+
 # Create tables before any tests run
 init_db()
 
@@ -84,3 +95,39 @@ def test_metrics_returns_uptime():
     assert "uptime_seconds" in body
     assert "request_count" in body
     assert body["service"] == "sensorhub"   
+
+
+def test_api_key_generation():
+    key = generate_api_key()
+    assert len(key) > 20
+    key2 = generate_api_key()
+    assert key != key2
+
+
+def test_constant_time_compare():
+    assert constant_time_compare("abc", "abc") is True
+    assert constant_time_compare("abc", "xyz") is False
+
+
+def test_hmac_sign_and_verify():
+    key = "mysecret"
+    msg = "hello world"
+    sig = compute_hmac(key, msg)
+    assert verify_hmac(key, msg, sig) is True
+    assert verify_hmac(key, msg, "wrongsig") is False
+    assert verify_hmac("wrongkey", msg, sig) is False
+
+
+def test_timestamp_freshness():
+    now = str(int(time.time()))
+    assert is_timestamp_fresh(now) is True
+    old = str(int(time.time()) - 60)
+    assert is_timestamp_fresh(old) is False
+    assert is_timestamp_fresh("notanumber") is False
+
+
+def test_nonce_generation():
+    n1 = generate_nonce()
+    n2 = generate_nonce()
+    assert len(n1) == 32
+    assert n1 != n2
