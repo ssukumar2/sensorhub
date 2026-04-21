@@ -41,6 +41,8 @@ add_executable(sensor_client
 target_include_directories(sensor_client PRIVATE
     inc
     lib/sensorproto
+    lib/strutil
+    lib/bytebuf
     ${paho-mqtt-c_SOURCE_DIR}/src
 )
 
