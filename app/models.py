@@ -12,7 +12,7 @@ from typing import Optional
 import secrets
 
 from sqlmodel import Field, SQLModel
-
+from enum import Enum
 
 # -------- Database tables --------
 
@@ -46,3 +46,15 @@ class ReadingCreate(SQLModel):
     sensor_id: int
     value: float
     unit: str
+
+class SensorType(str, Enum):
+    from enum import Enum
+
+
+class SensorType(str, Enum):
+    TEMPERATURE = "temperature"
+    HUMIDITY = "humidity"
+    VOLTAGE = "voltage"
+    CURRENT = "current"
+    POWER = "power"
+    PRESSURE = "pressure"
