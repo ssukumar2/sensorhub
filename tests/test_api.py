@@ -131,3 +131,8 @@ def test_nonce_generation():
     n2 = generate_nonce()
     assert len(n1) == 32
     assert n1 != n2
+    
+def test_rate_limiter_allows_normal_requests():
+    for _ in range(5):
+        response = client.get("/health")
+        assert response.status_code == 200
