@@ -18,9 +18,6 @@ from app.models import (
 )
 from app.middleware import RateLimiter
 
-# Add after app = FastAPI(...)
-
-
 import time as _time
 
 _start_time = _time.time()
