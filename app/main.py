@@ -16,6 +16,10 @@ from app.models import (
     SensorCreate,
     ReadingCreate,
 )
+from app.middleware import RateLimiter
+
+# Add after app = FastAPI(...)
+app.add_middleware(RateLimiter, max_requests=100, window_seconds=60)
 
 import time as _time
 
