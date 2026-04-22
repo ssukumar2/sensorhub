@@ -35,6 +35,7 @@ add_executable(sensor_client
     src/backend_client.cpp
     src/mqtt_client.cpp
     src/hmac_signer.cpp
+    src/can_transport.cpp
     lib/sensorproto/sensor_message.cpp
 )
 
