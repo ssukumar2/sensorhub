@@ -19,7 +19,7 @@ from app.models import (
 from app.middleware import RateLimiter
 
 # Add after app = FastAPI(...)
-app.add_middleware(RateLimiter, max_requests=100, window_seconds=60)
+
 
 import time as _time
 
@@ -40,7 +40,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
-
+app.add_middleware(RateLimiter, max_requests=100, window_seconds=60)
 
 # -------- Health check --------
 
