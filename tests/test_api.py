@@ -131,8 +131,31 @@ def test_nonce_generation():
     n2 = generate_nonce()
     assert len(n1) == 32
     assert n1 != n2
+
     
 def test_rate_limiter_allows_normal_requests():
     for _ in range(5):
         response = client.get("/health")
         assert response.status_code == 200
+
+
+def test_batch_reading_submission():
+    reg = client.post(
+        "/sensors",
+        json={"name": "batch-sensor", "location": "lab"},
+    ).json()
+
+    readings = [
+        {"sensor_id": reg["id"], "value": 22.0, "unit": "celsius"},
+        {"sensor_id": reg["id"], "value": 23.5, "unit": "celsius"},
+        {"sensor_id": reg["id"], "value": 21.0, "unit": "celsius"},
+    ]
+
+    response = client.post(
+        "/readings/batch",
+        json=readings,
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["count"] == 3
