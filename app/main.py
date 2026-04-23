@@ -180,3 +180,26 @@ def submit_batch_readings(
         session.refresh(r)
 
     return {"count": len(created), "readings": created}
+
+
+@app.delete("/sensors/{sensor_id}", status_code=204)
+def delete_sensor(
+    sensor_id: int,
+    x_api_key: str = Header(..., description="Sensor API key"),
+    session: Session = Depends(get_session),
+):
+    """Delete a sensor and all its readings."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+
+    readings = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+    ).all()
+    for r in readings:
+        session.delete(r)
+
+    session.delete(sensor)
+    session.commit()
