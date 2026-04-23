@@ -1,6 +1,9 @@
 #include "backend_client.hpp"
 #include "mqtt_client.hpp"
 
+#include "can_transport.hpp"
+#include "sensor_message.hpp"
+
 #include <chrono>
 #include <csignal>
 #include <cstring>
@@ -103,6 +106,42 @@ int main(int argc, char* argv[])
             }
         }
     } 
+    else if (mode == "can")
+    {
+        CanTransport can("vcan0");
+        if (!can.open())
+        {
+            std::cerr << "failed to open vcan0" << std::endl;
+            return 1;
+        }
+        std::cout << "CAN mode on vcan0. starting loop..." << std::endl;
+
+        while (keep_running)
+        {
+            double t = temp_dist(gen);
+            sensorproto::SensorReading reading;
+            reading.sensor_id = sensor.id;
+            reading.value = t;
+            reading.unit = "celsius";
+
+            auto frame_data = sensorproto::encode_can_frame(reading);
+            uint32_t can_id = 0x100 + static_cast<uint32_t>(sensor.id);
+
+            if (can.send_frame(can_id, frame_data))
+            {
+                ++count;
+                std::cout << "[" << count << "] CAN 0x" << std::hex << can_id
+                          << std::dec << " " << t << " c" << std::endl;
+            }
+            else
+            {
+                std::cerr << "CAN send failed" << std::endl;
+            }
+
+            for (int i = 0; i < interval && keep_running; ++i)
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
     else 
     {
         std::cout << "http mode. starting loop..." << std::endl;
