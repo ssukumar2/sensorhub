@@ -159,3 +159,19 @@ def test_batch_reading_submission():
     assert response.status_code == 201
     body = response.json()
     assert body["count"] == 3
+
+
+def test_delete_sensor():
+    reg = client.post(
+        "/sensors",
+        json={"name": "delete-me", "location": "lab"},
+    ).json()
+
+    response = client.delete(
+        f"/sensors/{reg['id']}",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 204
+
+    get_response = client.get(f"/sensors/{reg['id']}")
+    assert get_response.status_code == 404
