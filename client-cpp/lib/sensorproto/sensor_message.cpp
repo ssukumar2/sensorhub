@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <cmath>
 
 using json = nlohmann::json;
 
@@ -69,6 +70,42 @@ std::string code_to_unit(uint8_t code)
         case 0x08: return "watt";
         default:   return "unknown";
     }
+}
+
+std::vector<uint8_t> encode_can_frame(const SensorReading& reading)
+{
+    std::vector<uint8_t> frame(8, 0);
+
+    uint16_t sid = static_cast<uint16_t>(reading.sensor_id);
+    frame[0] = (sid >> 8) & 0xFF;
+    frame[1] = sid & 0xFF;
+
+    int32_t fixed_val = static_cast<int32_t>(std::round(reading.value * 100.0));
+    frame[2] = (fixed_val >> 24) & 0xFF;
+    frame[3] = (fixed_val >> 16) & 0xFF;
+    frame[4] = (fixed_val >> 8) & 0xFF;
+    frame[5] = fixed_val & 0xFF;
+
+    frame[6] = unit_to_code(reading.unit);
+    frame[7] = 0x00;
+
+    return frame;
+}
+
+SensorReading decode_can_frame(const std::vector<uint8_t>& frame)
+{
+    if (frame.size() < 8)
+        throw std::runtime_error("can frame too short");
+
+    SensorReading r;
+    r.sensor_id = (frame[0] << 8) | frame[1];
+
+    int32_t fixed_val = (frame[2] << 24) | (frame[3] << 16) |
+                        (frame[4] << 8) | frame[5];
+    r.value = fixed_val / 100.0;
+    r.unit = code_to_unit(frame[6]);
+
+    return r;
 }
 
 } // namespace sensorproto
