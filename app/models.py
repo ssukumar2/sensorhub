@@ -58,3 +58,10 @@ class SensorType(str, Enum):
     CURRENT = "current"
     POWER = "power"
     PRESSURE = "pressure"
+
+
+class ReadingCreate(SQLModel):
+    sensor_id: int
+    value: float
+    unit: str
+    sensor_type: str = "temperature"
