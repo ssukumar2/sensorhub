@@ -34,5 +34,4 @@ std::vector<uint8_t> encode_can_frame(const SensorReading& reading);
 /// Decode a CAN frame back to a reading.
 SensorReading decode_can_frame(const std::vector<uint8_t>& frame);
 
-
 } // namespace sensorproto
