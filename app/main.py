@@ -161,6 +161,7 @@ def submit_batch_readings(
 
     return {"count": len(created), "readings": created}
 
+
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
 def list_readings_for_sensor(
     sensor_id: int,
@@ -179,35 +180,6 @@ def list_readings_for_sensor(
         .limit(limit)
     )
     return session.exec(statement).all()
-
-
-@app.post("/readings/batch", status_code=201)
-def submit_batch_readings(
-    readings: List[ReadingCreate],
-    x_api_key: str = Header(..., description="Sensor API key"),
-    session: Session = Depends(get_session),
-):
-    """Submit multiple readings in a single request."""
-    if not readings:
-        raise HTTPException(status_code=400, detail="empty batch")
-
-    sensor = session.get(Sensor, readings[0].sensor_id)
-    if sensor is None:
-        raise HTTPException(status_code=404, detail="sensor not found")
-    if not secrets.compare_digest(sensor.api_key, x_api_key):
-        raise HTTPException(status_code=401, detail="invalid api key")
-
-    created = []
-    for r in readings:
-        reading = Reading(sensor_id=r.sensor_id, value=r.value, unit=r.unit)
-        session.add(reading)
-        created.append(reading)
-
-    session.commit()
-    for r in created:
-        session.refresh(r)
-
-    return {"count": len(created), "readings": created}
 
 
 @app.delete("/sensors/{sensor_id}", status_code=204)
