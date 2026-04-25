@@ -203,3 +203,29 @@ def delete_sensor(
 
     session.delete(sensor)
     session.commit()
+
+
+@app.patch("/sensors/{sensor_id}")
+def update_sensor(
+    sensor_id: int,
+    name: str = None,
+    location: str = None,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Update sensor name or location."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+
+    if name is not None:
+        sensor.name = name
+    if location is not None:
+        sensor.location = location
+
+    session.add(sensor)
+    session.commit()
+    session.refresh(sensor)
+    return sensor
