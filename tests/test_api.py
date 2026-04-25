@@ -175,3 +175,21 @@ def test_delete_sensor():
 
     get_response = client.get(f"/sensors/{reg['id']}")
     assert get_response.status_code == 404
+
+
+def test_update_sensor():
+    reg = client.post(
+        "/sensors",
+        json={"name": "old-name", "location": "old-loc"},
+    ).json()
+
+    response = client.patch(
+        f"/sensors/{reg['id']}?name=new-name&location=new-loc",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "new-name"
+    assert body["location"] == "new-loc"
+
+
