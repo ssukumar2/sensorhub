@@ -229,3 +229,26 @@ def update_sensor(
     session.commit()
     session.refresh(sensor)
     return sensor
+
+@app.get("/status")
+def system_status(session: Session = Depends(get_session)):
+    """Overall system status."""
+    sensor_count = len(session.exec(select(Sensor)).all())
+    reading_count = len(session.exec(select(Reading)).all())
+    return {
+        "service": "sensorhub",
+        "sensors": sensor_count,
+        "readings": reading_count,
+        "transports": ["http", "mqtt", "can"],
+    }
+
+
+@app.get("/version")
+def version():
+    """API version and capabilities."""
+    return {
+        "service": "sensorhub",
+        "api_version": "0.2.0",
+        "protocols": ["http", "mqtt", "can"],
+        "security": ["api_key", "hmac_sha256", "replay_protection"],
+    }
