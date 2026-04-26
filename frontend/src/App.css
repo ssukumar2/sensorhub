@@ -1,0 +1,16 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #1a1a2e; color: #e0e0e0; }
+.app { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+.header h1 { font-size: 1.5rem; color: #4a90d9; }
+.status-bar { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
+.indicator { width: 10px; height: 10px; border-radius: 50%; }
+.indicator.online { background: #00cc00; }
+.indicator.offline { background: #cc0000; }
+.sensor-count { color: #888; }
+.main { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
+.sensor-list table { width: 100%; border-collapse: collapse; }
+.sensor-list th, .sensor-list td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #333; }
+.sensor-list tr:hover { background: #2a2a3e; cursor: pointer; }
+.sensor-list tr.selected { background: #2a2a4e; }
+.sensor-list h2, .readings-chart h2 { font-size: 1.1rem; margin-bottom: 15px; color: #ccc; }
