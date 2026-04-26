@@ -18,6 +18,8 @@ from app.models import (
 )
 from app.middleware import RateLimiter
 
+from fastapi.middleware.cors import CORSMiddleware
+
 import time as _time
 
 _start_time = _time.time()
@@ -37,7 +39,15 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
 app.add_middleware(RateLimiter, max_requests=100, window_seconds=60)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -------- Health check --------
 
