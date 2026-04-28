@@ -193,3 +193,55 @@ def test_update_sensor():
     assert body["location"] == "new-loc"
 
 
+
+def test_update_sensor():
+    reg = client.post("/sensors", json={"name": "old-name", "location": "old-loc"}).json()
+    response = client.patch(
+        f"/sensors/{reg['id']}?name=new-name&location=new-loc",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "new-name"
+    assert body["location"] == "new-loc"
+
+
+def test_delete_sensor():
+    reg = client.post("/sensors", json={"name": "delete-me", "location": "lab"}).json()
+    response = client.delete(
+        f"/sensors/{reg['id']}",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 204
+
+
+def test_batch_reading_submission():
+    reg = client.post("/sensors", json={"name": "batch-sensor", "location": "lab"}).json()
+    readings = [
+        {"sensor_id": reg["id"], "value": 22.0, "unit": "celsius"},
+        {"sensor_id": reg["id"], "value": 23.5, "unit": "celsius"},
+        {"sensor_id": reg["id"], "value": 21.0, "unit": "celsius"},
+    ]
+    response = client.post(
+        "/readings/batch", json=readings,
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 201
+    assert response.json()["count"] == 3
+
+
+def test_system_status():
+    response = client.get("/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["service"] == "sensorhub"
+    assert "sensors" in body
+    assert "readings" in body
+
+
+def test_version_endpoint():
+    response = client.get("/version")
+    assert response.status_code == 200
+    body = response.json()
+    assert "api_version" in body
+    assert "http" in body["protocols"]
