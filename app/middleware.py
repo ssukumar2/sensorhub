@@ -15,6 +15,11 @@ class RateLimiter(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         client_ip = "unknown"
+        
+        if request.client is None:
+            response = await call_next(request)
+            return response
+        
         if request.client:
             client_ip = request.client.host
 
