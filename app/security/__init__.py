@@ -1,14 +1,18 @@
-"""Security utilities for sensorhub."""
+"""Security utilities for sensorhub.
 
+Single source of truth: hmac_verify. This module re-exports its primitives
+plus thin backward-compatible wrappers used by older tests.
+"""
 import hashlib
-import hmac
+import hmac as _hmac
 import secrets
 import time
 
-
-def generate_api_key(length: int = 32) -> str:
-    """Generate a cryptographically secure API key."""
-    return secrets.token_urlsafe(length)
+from app.security.hmac_verify import (
+    generate_api_key,
+    compute_hmac as compute_hmac_signed,
+    verify_hmac as verify_hmac_signed,
+)
 
 
 def constant_time_compare(a: str, b: str) -> bool:
@@ -17,18 +21,13 @@ def constant_time_compare(a: str, b: str) -> bool:
 
 
 def compute_hmac(key: str, message: str) -> str:
-    """Compute HMAC-SHA256 of a message using the given key."""
-    return hmac.new(
-        key.encode(),
-        message.encode(),
-        hashlib.sha256
-    ).hexdigest()
+    """Compute HMAC-SHA256 of a raw message (legacy 2-arg form)."""
+    return _hmac.new(key.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
 def verify_hmac(key: str, message: str, expected: str) -> bool:
-    """Verify HMAC signature using constant-time comparison."""
-    computed = compute_hmac(key, message)
-    return constant_time_compare(computed, expected)
+    """Verify HMAC of a raw message (legacy 3-arg form)."""
+    return constant_time_compare(compute_hmac(key, message), expected)
 
 
 def is_timestamp_fresh(timestamp_str: str, max_age_seconds: int = 30) -> bool:
@@ -44,3 +43,15 @@ def is_timestamp_fresh(timestamp_str: str, max_age_seconds: int = 30) -> bool:
 def generate_nonce() -> str:
     """Generate a random 128-bit hex nonce."""
     return secrets.token_hex(16)
+
+
+__all__ = [
+    "generate_api_key",
+    "constant_time_compare",
+    "compute_hmac",
+    "verify_hmac",
+    "compute_hmac_signed",
+    "verify_hmac_signed",
+    "is_timestamp_fresh",
+    "generate_nonce",
+]
