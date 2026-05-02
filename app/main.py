@@ -16,6 +16,7 @@ from app.models import (
     SensorCreate,
     ReadingCreate,
 )
+from app.security.dependencies import require_signed_sensor
 from app.middleware import RateLimiter
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,26 +113,15 @@ def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
 
 
 # -------- Readings --------
-
 @app.post("/readings", response_model=Reading, status_code=201)
 def submit_reading(
     payload: ReadingCreate,
-    #sensor: Sensor = Depends(require_sensor_key),
-    x_api_key: str = Header(..., description="Sensor API key"),
+    sensor: Sensor = Depends(require_signed_sensor),
     session: Session = Depends(get_session),
 ):
     """Submit a telemetry reading from a sensor."""
-    # Check the sensor exists before inserting the reading.
-    #sensor = session.get(Sensor, payload.sensor_id)
-    #if sensor is None:
-      #  raise HTTPException(status_code=404, detail="sensor not found")
-
-    sensor = session.get(Sensor, payload.sensor_id)
-    if sensor is None:
-        raise HTTPException(status_code=404, detail="sensor not found")
-    if not secrets.compare_digest(sensor.api_key, x_api_key):
-        raise HTTPException(status_code=401, detail="invalid api key")
-
+    if sensor.id != payload.sensor_id:
+        raise HTTPException(status_code=403, detail="sensor id mismatch")
     reading = Reading(
         sensor_id=payload.sensor_id,
         value=payload.value,
@@ -146,30 +136,82 @@ def submit_reading(
 @app.post("/readings/batch", status_code=201)
 def submit_batch_readings(
     readings: List[ReadingCreate],
-    x_api_key: str = Header(...),
+    sensor: Sensor = Depends(require_signed_sensor),
     session: Session = Depends(get_session),
 ):
     """Submit multiple readings in a single request."""
     if not readings:
         raise HTTPException(status_code=400, detail="empty batch")
-
-    sensor = session.get(Sensor, readings[0].sensor_id)
-    if sensor is None:
-        raise HTTPException(status_code=404, detail="sensor not found")
-    if not secrets.compare_digest(sensor.api_key, x_api_key):
-        raise HTTPException(status_code=401, detail="invalid api key")
-
+    for r in readings:
+        if r.sensor_id != sensor.id:
+            raise HTTPException(status_code=403, detail="sensor id mismatch")
     created = []
     for r in readings:
         reading = Reading(sensor_id=r.sensor_id, value=r.value, unit=r.unit)
         session.add(reading)
         created.append(reading)
-
     session.commit()
     for r in created:
         session.refresh(r)
-
     return {"count": len(created), "readings": created}
+
+# @app.post("/readings", response_model=Reading, status_code=201)
+# def submit_reading(
+#     payload: ReadingCreate,
+#     #sensor: Sensor = Depends(require_sensor_key),
+#     x_api_key: str = Header(..., description="Sensor API key"),
+#     session: Session = Depends(get_session),
+# ):
+#     """Submit a telemetry reading from a sensor."""
+#     # Check the sensor exists before inserting the reading.
+#     #sensor = session.get(Sensor, payload.sensor_id)
+#     #if sensor is None:
+#       #  raise HTTPException(status_code=404, detail="sensor not found")
+
+#     sensor = session.get(Sensor, payload.sensor_id)
+#     if sensor is None:
+#         raise HTTPException(status_code=404, detail="sensor not found")
+#     if not secrets.compare_digest(sensor.api_key, x_api_key):
+#         raise HTTPException(status_code=401, detail="invalid api key")
+
+#     reading = Reading(
+#         sensor_id=payload.sensor_id,
+#         value=payload.value,
+#         unit=payload.unit,
+#     )
+#     session.add(reading)
+#     session.commit()
+#     session.refresh(reading)
+#     return reading
+
+
+# @app.post("/readings/batch", status_code=201)
+# def submit_batch_readings(
+#     readings: List[ReadingCreate],
+#     x_api_key: str = Header(...),
+#     session: Session = Depends(get_session),
+# ):
+#     """Submit multiple readings in a single request."""
+#     if not readings:
+#         raise HTTPException(status_code=400, detail="empty batch")
+
+#     sensor = session.get(Sensor, readings[0].sensor_id)
+#     if sensor is None:
+#         raise HTTPException(status_code=404, detail="sensor not found")
+#     if not secrets.compare_digest(sensor.api_key, x_api_key):
+#         raise HTTPException(status_code=401, detail="invalid api key")
+
+#     created = []
+#     for r in readings:
+#         reading = Reading(sensor_id=r.sensor_id, value=r.value, unit=r.unit)
+#         session.add(reading)
+#         created.append(reading)
+
+#     session.commit()
+#     for r in created:
+#         session.refresh(r)
+
+#     return {"count": len(created), "readings": created}
 
 
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
