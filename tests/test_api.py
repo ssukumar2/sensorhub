@@ -1,9 +1,10 @@
 """Tests for the sensorhub REST API."""
+import json
+import time
 from fastapi.testclient import TestClient
 
 from app.database import init_db
 from app.main import app
-
 from app.security import (
     generate_api_key,
     constant_time_compare,
@@ -11,14 +12,31 @@ from app.security import (
     verify_hmac,
     is_timestamp_fresh,
     generate_nonce,
+    compute_hmac_signed,
 )
-import time
 
-
-# Create tables before any tests run
 init_db()
-
 client = TestClient(app)
+
+
+def _signed_post(path, body_obj, api_key):
+    """POST signed per app.security.hmac_verify contract."""
+    body = json.dumps(body_obj, separators=(",", ":"))
+    nonce = generate_nonce()
+    timestamp = str(int(time.time()))
+    signature = compute_hmac_signed(api_key, body, nonce, timestamp)
+    return client.post(
+        path,
+        content=body,
+        headers={
+            "content-type": "application/json",
+            "x-api-key": api_key,
+            "x-nonce": nonce,
+            "x-timestamp": timestamp,
+            "x-signature": signature,
+        },
+    )
+
 
 def test_health_returns_ok():
     response = client.get("/health")
@@ -47,18 +65,15 @@ def test_list_sensors_works():
 
 
 def test_submit_reading_requires_api_key():
-    # First register a sensor
     reg = client.post(
         "/sensors",
         json={"name": "test-auth-sensor", "location": "lab"},
     ).json()
-
-    # Try without api key -> should fail
     response = client.post(
         "/readings",
         json={"sensor_id": reg["id"], "value": 22.0, "unit": "celsius"},
     )
-    assert response.status_code == 422  # missing required header
+    assert response.status_code == 422
 
 
 def test_submit_reading_with_valid_key():
@@ -66,11 +81,10 @@ def test_submit_reading_with_valid_key():
         "/sensors",
         json={"name": "test-valid-sensor", "location": "lab"},
     ).json()
-
-    response = client.post(
+    response = _signed_post(
         "/readings",
-        json={"sensor_id": reg["id"], "value": 22.5, "unit": "celsius"},
-        headers={"x-api-key": reg["api_key"]},
+        {"sensor_id": reg["id"], "value": 22.5, "unit": "celsius"},
+        reg["api_key"],
     )
     assert response.status_code == 201
 
@@ -80,13 +94,13 @@ def test_submit_reading_with_wrong_key():
         "/sensors",
         json={"name": "test-wrong-key-sensor", "location": "lab"},
     ).json()
-
-    response = client.post(
+    response = _signed_post(
         "/readings",
-        json={"sensor_id": reg["id"], "value": 22.5, "unit": "celsius"},
-        headers={"x-api-key": "wrong-key-12345"},
+        {"sensor_id": reg["id"], "value": 22.5, "unit": "celsius"},
+        "wrong-key-12345",
     )
     assert response.status_code == 401
+
 
 def test_metrics_returns_uptime():
     response = client.get("/metrics")
@@ -94,14 +108,13 @@ def test_metrics_returns_uptime():
     body = response.json()
     assert "uptime_seconds" in body
     assert "request_count" in body
-    assert body["service"] == "sensorhub"   
+    assert body["service"] == "sensorhub"
 
 
 def test_api_key_generation():
     key = generate_api_key()
     assert len(key) > 20
-    key2 = generate_api_key()
-    assert key != key2
+    assert key != generate_api_key()
 
 
 def test_constant_time_compare():
@@ -132,87 +145,11 @@ def test_nonce_generation():
     assert len(n1) == 32
     assert n1 != n2
 
-    
+
 def test_rate_limiter_allows_normal_requests():
     for _ in range(5):
         response = client.get("/health")
         assert response.status_code == 200
-
-
-def test_batch_reading_submission():
-    reg = client.post(
-        "/sensors",
-        json={"name": "batch-sensor", "location": "lab"},
-    ).json()
-
-    readings = [
-        {"sensor_id": reg["id"], "value": 22.0, "unit": "celsius"},
-        {"sensor_id": reg["id"], "value": 23.5, "unit": "celsius"},
-        {"sensor_id": reg["id"], "value": 21.0, "unit": "celsius"},
-    ]
-
-    response = client.post(
-        "/readings/batch",
-        json=readings,
-        headers={"x-api-key": reg["api_key"]},
-    )
-    assert response.status_code == 201
-    body = response.json()
-    assert body["count"] == 3
-
-
-def test_delete_sensor():
-    reg = client.post(
-        "/sensors",
-        json={"name": "delete-me", "location": "lab"},
-    ).json()
-
-    response = client.delete(
-        f"/sensors/{reg['id']}",
-        headers={"x-api-key": reg["api_key"]},
-    )
-    assert response.status_code == 204
-
-    get_response = client.get(f"/sensors/{reg['id']}")
-    assert get_response.status_code == 404
-
-
-def test_update_sensor():
-    reg = client.post(
-        "/sensors",
-        json={"name": "old-name", "location": "old-loc"},
-    ).json()
-
-    response = client.patch(
-        f"/sensors/{reg['id']}?name=new-name&location=new-loc",
-        headers={"x-api-key": reg["api_key"]},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["name"] == "new-name"
-    assert body["location"] == "new-loc"
-
-
-
-def test_update_sensor():
-    reg = client.post("/sensors", json={"name": "old-name", "location": "old-loc"}).json()
-    response = client.patch(
-        f"/sensors/{reg['id']}?name=new-name&location=new-loc",
-        headers={"x-api-key": reg["api_key"]},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["name"] == "new-name"
-    assert body["location"] == "new-loc"
-
-
-def test_delete_sensor():
-    reg = client.post("/sensors", json={"name": "delete-me", "location": "lab"}).json()
-    response = client.delete(
-        f"/sensors/{reg['id']}",
-        headers={"x-api-key": reg["api_key"]},
-    )
-    assert response.status_code == 204
 
 
 def test_batch_reading_submission():
@@ -222,12 +159,37 @@ def test_batch_reading_submission():
         {"sensor_id": reg["id"], "value": 23.5, "unit": "celsius"},
         {"sensor_id": reg["id"], "value": 21.0, "unit": "celsius"},
     ]
-    response = client.post(
-        "/readings/batch", json=readings,
-        headers={"x-api-key": reg["api_key"]},
-    )
+    response = _signed_post("/readings/batch", readings, reg["api_key"])
     assert response.status_code == 201
     assert response.json()["count"] == 3
+
+
+def test_delete_sensor():
+    reg = client.post(
+        "/sensors",
+        json={"name": "delete-me", "location": "lab"},
+    ).json()
+    response = client.delete(
+        f"/sensors/{reg['id']}",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 204
+    assert client.get(f"/sensors/{reg['id']}").status_code == 404
+
+
+def test_update_sensor():
+    reg = client.post(
+        "/sensors",
+        json={"name": "old-name", "location": "old-loc"},
+    ).json()
+    response = client.patch(
+        f"/sensors/{reg['id']}?name=new-name&location=new-loc",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "new-name"
+    assert body["location"] == "new-loc"
 
 
 def test_system_status():
