@@ -1,3 +1,6 @@
+
+[![Python Tests](https://github.com/ssukumar2/sensorhub/actions/workflows/python-tests.yml/badge.svg)](https://github.com/ssukumar2/sensorhub/actions/workflows/python-tests.yml)
+
 # sensorhub
 
 An IoT sensor telemetry gateway with a Python backend and a C++ sensor client. Sensors register with the backend, receive an API key, and submit readings over HTTP, MQTT, or CAN bus. All three transport paths write to the same SQLite database, so the backend is fully transport-agnostic.
