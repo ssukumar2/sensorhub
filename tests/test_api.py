@@ -252,3 +252,18 @@ def test_submit_reading_with_stale_timestamp():
         },
     )
     assert response.status_code == 401
+
+def test_readings_recent_returns_list():
+    reg = client.post("/sensors", json={"name": "recent-sensor", "location": "lab"}).json()
+    for v in (1.1, 2.2, 3.3):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get("/readings/recent?limit=10")
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body, list)
+    assert any(r["sensor_name"] == "recent-sensor" for r in body)
+
+
+def test_readings_recent_rejects_bad_limit():
+    assert client.get("/readings/recent?limit=0").status_code == 400
+    assert client.get("/readings/recent?limit=9999").status_code == 400
