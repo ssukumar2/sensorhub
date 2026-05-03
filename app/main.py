@@ -214,6 +214,32 @@ def submit_batch_readings(
 #     return {"count": len(created), "readings": created}
 
 
+@app.get("/readings/recent")
+def list_recent_readings(
+    limit: int = 50,
+    session: Session = Depends(get_session),
+):
+    """Return the most recent readings across all sensors with sensor name."""
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    rows = session.exec(
+        select(Reading, Sensor)
+        .join(Sensor, Sensor.id == Reading.sensor_id)
+        .order_by(Reading.id.desc())
+        .limit(limit)
+    ).all()
+    return [
+        {
+            "id": r.id,
+            "sensor_id": r.sensor_id,
+            "sensor_name": sensor.name,
+            "value": r.value,
+            "unit": r.unit,
+        }
+        for r, sensor in rows
+    ]
+
+
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
 def list_readings_for_sensor(
     sensor_id: int,
