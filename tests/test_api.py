@@ -207,3 +207,47 @@ def test_version_endpoint():
     body = response.json()
     assert "api_version" in body
     assert "http" in body["protocols"]
+
+def test_submit_reading_with_bad_signature():
+    reg = client.post(
+        "/sensors",
+        json={"name": "test-bad-sig-sensor", "location": "lab"},
+    ).json()
+    body = json.dumps({"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, separators=(",", ":"))
+    nonce = generate_nonce()
+    timestamp = str(int(time.time()))
+    response = client.post(
+        "/readings",
+        content=body,
+        headers={
+            "content-type": "application/json",
+            "x-api-key": reg["api_key"],
+            "x-nonce": nonce,
+            "x-timestamp": timestamp,
+            "x-signature": "deadbeef" * 8,
+        },
+    )
+    assert response.status_code == 401
+
+
+def test_submit_reading_with_stale_timestamp():
+    reg = client.post(
+        "/sensors",
+        json={"name": "test-stale-sensor", "location": "lab"},
+    ).json()
+    body = json.dumps({"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, separators=(",", ":"))
+    nonce = generate_nonce()
+    stale = str(int(time.time()) - 120)
+    signature = compute_hmac_signed(reg["api_key"], body, nonce, stale)
+    response = client.post(
+        "/readings",
+        content=body,
+        headers={
+            "content-type": "application/json",
+            "x-api-key": reg["api_key"],
+            "x-nonce": nonce,
+            "x-timestamp": stale,
+            "x-signature": signature,
+        },
+    )
+    assert response.status_code == 401
