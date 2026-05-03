@@ -5,6 +5,7 @@ from sqlmodel import Session
 from app.database import get_session
 from app.models import Sensor
 from app.security.hmac_verify import verify_hmac
+from sqlmodel import select
 
 
 async def require_signed_sensor(
@@ -17,7 +18,8 @@ async def require_signed_sensor(
 ) -> Sensor:
     """Authenticate sensor via API key + HMAC over raw body."""
     body = (await request.body()).decode("utf-8")
-    sensors = session.query(Sensor).all()
+   #sensors = session.query(Sensor).all()
+    sensors = session.exec(select(Sensor)).all()
     for s in sensors:
         if secrets.compare_digest(s.api_key, x_api_key):
             if not verify_hmac(s.api_key, body, x_nonce, x_timestamp, x_signature):
