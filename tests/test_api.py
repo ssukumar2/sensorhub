@@ -16,7 +16,8 @@ from app.security import (
 )
 
 init_db()
-client = TestClient(app)
+#client = TestClient(app)
+client = TestClient(app, raise_server_exceptions=True)
 
 
 def _signed_post(path, body_obj, api_key):
