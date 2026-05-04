@@ -31,3 +31,11 @@ Thumbs.db
 .env
 .env.local
 
+
+# added by sensorhub setup
+*.pyc
+.pytest_cache/
+node_modules/
+frontend/build/
+frontend/dist/
+*.log
