@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import StatusBar from './components/StatusBar';
 import SensorList from './components/SensorList';
 import ReadingsChart from './components/ReadingsChart';
+import RecentActivity from "./components/RecentActivity";
 import './App.css';
 
 const API = 'http://localhost:8000';
@@ -26,6 +27,7 @@ export default function App() {
         <SensorList sensors={sensors} onSelect={setSelected} selected={selected} />
         {selected && <ReadingsChart sensorId={selected} api={API} />}
       </main>
+      <RecentActivity />
     </div>
   );
 }
