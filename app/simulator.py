@@ -77,8 +77,19 @@ class SensorSimulator:
         log.info("simulation complete: %d ticks", tick)
 
 
-if __name__ == "__main__":
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="sensorhub data simulator")
+    parser.add_argument("--backend", default="http://localhost:8000")
+    parser.add_argument("--count", type=int, default=5)
+    parser.add_argument("--interval", type=float, default=2.0)
+    parser.add_argument("--duration", type=int, default=120)
+    args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    sim = SensorSimulator()
-    sim.register_sensors(5)
-    sim.run(interval=2.0, duration=120)
+    sim = SensorSimulator(backend_url=args.backend)
+    sim.register_sensors(args.count)
+    sim.run(interval=args.interval, duration=args.duration)
+
+
+if __name__ == "__main__":
+    main()
