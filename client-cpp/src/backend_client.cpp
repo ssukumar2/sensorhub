@@ -58,8 +58,8 @@ bool BackendClient::submit_reading(const SensorIdentity& sensor, double value, c
     std::string nonce = NonceGenerator::generate_nonce();
     std::string ts = NonceGenerator::timestamp();
 
-    // Sign: payload + nonce + timestamp
-    std::string sign_input = payload + nonce + ts;
+    // Sign: payload:nonce:timestamp (must match app/security/hmac_verify.py)
+    std::string sign_input = payload + ":" + nonce + ":" + ts;
     std::string signature = signer.sign(sign_input);
 
     cpr::Response r = cpr::Post(
