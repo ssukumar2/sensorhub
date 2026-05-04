@@ -240,6 +240,36 @@ def list_recent_readings(
     ]
 
 
+@app.get("/sensors/{sensor_id}/stats")
+def sensor_stats(
+    sensor_id: int,
+    window: int = 100,
+    session: Session = Depends(get_session),
+):
+    """Return min/max/avg/count over the most recent `window` readings."""
+    if window < 1 or window > 10000:
+        raise HTTPException(status_code=400, detail="window must be between 1 and 10000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading)
+        .where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc())
+        .limit(window)
+    ).all()
+    if not rows:
+        return {"sensor_id": sensor_id, "count": 0, "min": None, "max": None, "avg": None}
+    values = [r.value for r in rows]
+    return {
+        "sensor_id": sensor_id,
+        "count": len(values),
+        "min": min(values),
+        "max": max(values),
+        "avg": round(sum(values) / len(values), 4),
+    }
+
+
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
 def list_readings_for_sensor(
     sensor_id: int,
