@@ -76,3 +76,37 @@ bool BackendClient::submit_reading(const SensorIdentity& sensor, double value, c
 
     return r.status_code == 201;
 }
+bool BackendClient::submit_batch(const SensorIdentity& sensor, const std::vector<BackendClient::ReadingItem>& items)
+{
+    json arr = json::array();
+    for (const auto& it : items)
+    {
+        arr.push_back({
+            {"sensor_id", sensor.id},
+            {"value", it.value},
+            {"unit", it.unit}
+        });
+    }
+
+    std::string payload = arr.dump();
+
+    HmacSigner signer(sensor.api_key);
+    std::string nonce = NonceGenerator::generate_nonce();
+    std::string ts = NonceGenerator::timestamp();
+    std::string sign_input = payload + ":" + nonce + ":" + ts;
+    std::string signature = signer.sign(sign_input);
+
+    cpr::Response r = cpr::Post(
+        cpr::Url{backend_url_ + "/readings/batch"},
+        cpr::Header{
+            {"Content-Type", "application/json"},
+            {"x-api-key", sensor.api_key},
+            {"x-signature", signature},
+            {"x-nonce", nonce},
+            {"x-timestamp", ts}
+        },
+        cpr::Body{payload}
+    );
+
+    return r.status_code == 201;
+}
