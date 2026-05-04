@@ -267,3 +267,35 @@ def test_readings_recent_returns_list():
 def test_readings_recent_rejects_bad_limit():
     assert client.get("/readings/recent?limit=0").status_code == 400
     assert client.get("/readings/recent?limit=9999").status_code == 400
+
+
+def test_sensor_stats_empty():
+    reg = client.post("/sensors", json={"name": "stats-empty", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/stats")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 0
+    assert body["min"] is None
+
+
+def test_sensor_stats_with_readings():
+    reg = client.post("/sensors", json={"name": "stats-filled", "location": "lab"}).json()
+    for v in (10.0, 20.0, 30.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/stats")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 3
+    assert body["min"] == 10.0
+    assert body["max"] == 30.0
+    assert body["avg"] == 20.0
+
+
+def test_sensor_stats_unknown_sensor():
+    assert client.get("/sensors/99999/stats").status_code == 404
+
+
+def test_sensor_stats_bad_window():
+    reg = client.post("/sensors", json={"name": "stats-badw", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/stats?window=0").status_code == 400
+    assert client.get(f"/sensors/{reg['id']}/stats?window=999999").status_code == 400
