@@ -331,3 +331,21 @@ def test_sensor_stats_bad_window():
     reg = client.post("/sensors", json={"name": "stats-badw", "location": "lab"}).json()
     assert client.get(f"/sensors/{reg['id']}/stats?window=0").status_code == 400
     assert client.get(f"/sensors/{reg['id']}/stats?window=999999").status_code == 400
+
+
+def test_latest_reading_404_when_no_readings():
+    reg = client.post("/sensors", json={"name": "latest-empty", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/latest").status_code == 404
+
+
+def test_latest_reading_returns_most_recent():
+    reg = client.post("/sensors", json={"name": "latest-ok", "location": "lab"}).json()
+    for v in (1.0, 2.0, 3.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/latest")
+    assert response.status_code == 200
+    assert response.json()["value"] == 3.0
+
+
+def test_latest_reading_unknown_sensor():
+    assert client.get("/sensors/99999/latest").status_code == 404
