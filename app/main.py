@@ -270,6 +270,20 @@ def sensor_stats(
     }
 
 
+@app.get("/sensors/{sensor_id}/latest")
+def latest_reading(sensor_id: int, session: Session = Depends(get_session)):
+    """Return the single most recent reading for a sensor, or 404 if none."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    row = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id).order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="no readings yet")
+    return row
+
+
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
 def list_readings_for_sensor(
     sensor_id: int,
