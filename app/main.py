@@ -284,6 +284,12 @@ def latest_reading(sensor_id: int, session: Session = Depends(get_session)):
     return row
 
 
+@app.get("/sensors/count")
+def count_sensors(session: Session = Depends(get_session)):
+    """Return total sensor count."""
+    return {"count": len(session.exec(select(Sensor)).all())}
+
+
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
 def list_readings_for_sensor(
     sensor_id: int,
