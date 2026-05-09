@@ -437,3 +437,17 @@ def test_clear_readings_removes_them():
     response = client.delete(f"/sensors/{reg['id']}/readings", headers={"x-api-key": reg["api_key"]})
     assert response.status_code == 204
     assert client.get(f"/sensors/{reg['id']}/latest").status_code == 404
+
+
+def test_readings_by_unit_filters():
+    reg = client.post("/sensors", json={"name": "unit-filter", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 50.0, "unit": "percent"}, reg["api_key"])
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 22.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get("/readings/by-unit/percent?limit=20")
+    assert response.status_code == 200
+    body = response.json()
+    assert all(r["unit"] == "percent" for r in body)
+
+
+def test_readings_by_unit_bad_limit():
+    assert client.get("/readings/by-unit/celsius?limit=0").status_code == 400
