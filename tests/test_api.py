@@ -349,3 +349,56 @@ def test_latest_reading_returns_most_recent():
 
 def test_latest_reading_unknown_sensor():
     assert client.get("/sensors/99999/latest").status_code == 404
+
+
+def test_sensors_count_returns_int():
+    response = client.get("/sensors/count")
+    assert response.status_code == 200
+    assert isinstance(response.json()["count"], int)
+
+
+def test_search_rejects_short_query():
+    assert client.get("/sensors/search?q=a").status_code == 400
+
+
+def test_search_finds_by_name():
+    client.post("/sensors", json={"name": "needle-sensor-xyz", "location": "lab"}).json()
+    response = client.get("/sensors/search?q=needle-sensor-xyz")
+    assert response.status_code == 200
+    assert any(s["name"] == "needle-sensor-xyz" for s in response.json())
+
+
+def test_search_finds_by_location():
+    client.post("/sensors", json={"name": "loc-test", "location": "rooftop-unique"}).json()
+    response = client.get("/sensors/search?q=rooftop-unique")
+    assert response.status_code == 200
+    assert any(s["location"] == "rooftop-unique" for s in response.json())
+
+
+def test_clear_readings_requires_api_key():
+    reg = client.post("/sensors", json={"name": "clear-noauth", "location": "lab"}).json()
+    response = client.delete(f"/sensors/{reg['id']}/readings", headers={"x-api-key": "wrong"})
+    assert response.status_code == 401
+
+
+def test_clear_readings_removes_them():
+    reg = client.post("/sensors", json={"name": "clear-ok", "location": "lab"}).json()
+    for v in (1.0, 2.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    assert client.get(f"/sensors/{reg['id']}/latest").status_code == 200
+    response = client.delete(f"/sensors/{reg['id']}/readings", headers={"x-api-key": reg["api_key"]})
+    assert response.status_code == 204
+    assert client.get(f"/sensors/{reg['id']}/latest").status_code == 404
+
+
+def test_readings_by_unit_filters():
+    reg = client.post("/sensors", json={"name": "unit-filter", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 50.0, "unit": "percent"}, reg["api_key"])
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 22.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get("/readings/by-unit/percent?limit=20")
+    assert response.status_code == 200
+    assert all(r["unit"] == "percent" for r in response.json())
+
+
+def test_readings_by_unit_bad_limit():
+    assert client.get("/readings/by-unit/celsius?limit=0").status_code == 400

@@ -313,6 +313,25 @@ def latest_reading(sensor_id: int, session: Session = Depends(get_session)):
 
 
 
+@app.delete("/sensors/{sensor_id}/readings", status_code=204)
+def clear_sensor_readings(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Delete all readings for a sensor (sensor itself stays)."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    rows = session.exec(select(Reading).where(Reading.sensor_id == sensor_id)).all()
+    for r in rows:
+        session.delete(r)
+    session.commit()
+    return None
+
+
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
 def list_readings_for_sensor(
     sensor_id: int,
