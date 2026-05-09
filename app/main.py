@@ -103,6 +103,33 @@ def list_sensors(session: Session = Depends(get_session)):
     return session.exec(select(Sensor)).all()
 
 
+@app.get("/sensors/count")
+def count_sensors(session: Session = Depends(get_session)):
+    """Return total sensor count."""
+    return {"count": len(session.exec(select(Sensor)).all())}
+
+
+@app.get("/sensors/search")
+def search_sensors(q: str, session: Session = Depends(get_session)):
+    """Search sensors by name or location substring."""
+    if not q or len(q) < 2:
+        raise HTTPException(status_code=400, detail="query must be at least 2 chars")
+    rows = session.exec(select(Sensor)).all()
+    ql = q.lower()
+    return [s for s in rows if ql in s.name.lower() or ql in (s.location or "").lower()]
+
+
+@app.get("/readings/by-unit/{unit}")
+def readings_by_unit(unit: str, limit: int = 50, session: Session = Depends(get_session)):
+    """Return recent readings filtered by unit."""
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    rows = session.exec(
+        select(Reading).where(Reading.unit == unit).order_by(Reading.id.desc()).limit(limit)
+    ).all()
+    return rows
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
@@ -284,10 +311,6 @@ def latest_reading(sensor_id: int, session: Session = Depends(get_session)):
     return row
 
 
-@app.get("/sensors/count")
-def count_sensors(session: Session = Depends(get_session)):
-    """Return total sensor count."""
-    return {"count": len(session.exec(select(Sensor)).all())}
 
 
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
