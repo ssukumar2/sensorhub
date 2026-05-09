@@ -61,7 +61,7 @@ class SensorSimulator:
         log.info("starting simulation: %d sensors, %.1fs interval", len(self.sensors), interval)
         tick = 0
         end = time.time() + duration
-        while time.time() < end:
+        while True:
             for sensor in self.sensors:
                 value, unit = self.generate_value(sensor["name"], tick)
                 try:
@@ -73,6 +73,8 @@ class SensorSimulator:
                 except requests.RequestException:
                     pass
             tick += 1
+            if time.time() >= end:
+                break
             time.sleep(interval)
         log.info("simulation complete: %d ticks", tick)
 
@@ -84,7 +86,10 @@ def main():
     parser.add_argument("--count", type=int, default=5)
     parser.add_argument("--interval", type=float, default=2.0)
     parser.add_argument("--duration", type=int, default=120)
+    parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
+    if args.once:
+        args.duration = 0
     logging.basicConfig(level=logging.INFO)
     sim = SensorSimulator(backend_url=args.backend)
     sim.register_sensors(args.count)
