@@ -332,6 +332,16 @@ def clear_sensor_readings(
     return None
 
 
+@app.get("/sensors/search")
+def search_sensors(q: str, session: Session = Depends(get_session)):
+    """Search sensors by name or location substring."""
+    if not q or len(q) < 2:
+        raise HTTPException(status_code=400, detail="query must be at least 2 chars")
+    rows = session.exec(select(Sensor)).all()
+    ql = q.lower()
+    return [s for s in rows if ql in s.name.lower() or ql in (s.location or "").lower()]
+
+
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
 def list_readings_for_sensor(
     sensor_id: int,
