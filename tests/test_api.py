@@ -421,3 +421,19 @@ def test_search_finds_by_location():
     response = client.get("/sensors/search?q=rooftop-unique")
     assert response.status_code == 200
     assert any(s["location"] == "rooftop-unique" for s in response.json())
+
+
+def test_clear_readings_requires_api_key():
+    reg = client.post("/sensors", json={"name": "clear-noauth", "location": "lab"}).json()
+    response = client.delete(f"/sensors/{reg['id']}/readings", headers={"x-api-key": "wrong"})
+    assert response.status_code == 401
+
+
+def test_clear_readings_removes_them():
+    reg = client.post("/sensors", json={"name": "clear-ok", "location": "lab"}).json()
+    for v in (1.0, 2.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    assert client.get(f"/sensors/{reg['id']}/latest").status_code == 200
+    response = client.delete(f"/sensors/{reg['id']}/readings", headers={"x-api-key": reg["api_key"]})
+    assert response.status_code == 204
+    assert client.get(f"/sensors/{reg['id']}/latest").status_code == 404
