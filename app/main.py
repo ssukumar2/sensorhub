@@ -361,6 +361,17 @@ def clear_sensor_readings(
     return None
 
 
+@app.get("/readings/by-unit/{unit}")
+def readings_by_unit(unit: str, limit: int = 50, session: Session = Depends(get_session)):
+    """Return recent readings filtered by unit."""
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    rows = session.exec(
+        select(Reading).where(Reading.unit == unit).order_by(Reading.id.desc()).limit(limit)
+    ).all()
+    return rows
+
+
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
 def list_readings_for_sensor(
     sensor_id: int,
