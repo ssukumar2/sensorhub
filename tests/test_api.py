@@ -402,3 +402,22 @@ def test_readings_by_unit_filters():
 
 def test_readings_by_unit_bad_limit():
     assert client.get("/readings/by-unit/celsius?limit=0").status_code == 400
+
+
+def test_search_rejects_short_query():
+    assert client.get("/sensors/search?q=a").status_code == 400
+
+
+def test_search_finds_by_name():
+    client.post("/sensors", json={"name": "needle-sensor-xyz", "location": "lab"}).json()
+    response = client.get("/sensors/search?q=needle-sensor-xyz")
+    assert response.status_code == 200
+    body = response.json()
+    assert any(s["name"] == "needle-sensor-xyz" for s in body)
+
+
+def test_search_finds_by_location():
+    client.post("/sensors", json={"name": "loc-test", "location": "rooftop-unique"}).json()
+    response = client.get("/sensors/search?q=rooftop-unique")
+    assert response.status_code == 200
+    assert any(s["location"] == "rooftop-unique" for s in response.json())
