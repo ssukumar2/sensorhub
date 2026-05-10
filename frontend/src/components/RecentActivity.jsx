@@ -24,6 +24,12 @@ export default function RecentActivity({ apiBase = "" }) {
     return () => { cancelled = true; clearInterval(id); };
   }, [apiBase]);
 
+  const formatTime = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleTimeString();
+  };
+
   if (error) return <div className="recent-error">recent activity unavailable: {error}</div>;
   if (!rows.length) return <div className="recent-empty">no readings yet</div>;
 
@@ -33,6 +39,7 @@ export default function RecentActivity({ apiBase = "" }) {
       <ul>
         {rows.map((row) => (
           <li key={row.id}>
+            <span className="time">{formatTime(row.recorded_at)}</span>
             <span className="sensor">{row.sensor_name}</span>
             <span className="value">{row.value} {row.unit}</span>
           </li>
