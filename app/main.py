@@ -136,6 +136,13 @@ def count_readings(session: Session = Depends(get_session)):
     return {"count": len(session.exec(select(Reading)).all())}
 
 
+@app.get("/sensors/by-location/{location}")
+def sensors_by_location(location: str, session: Session = Depends(get_session)):
+    """Return sensors at the given exact location."""
+    rows = session.exec(select(Sensor).where(Sensor.location == location)).all()
+    return rows
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
