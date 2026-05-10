@@ -275,6 +275,7 @@ def list_recent_readings(
             "sensor_name": sensor.name,
             "value": r.value,
             "unit": r.unit,
+            "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
         }
         for r, sensor in rows
     ]
