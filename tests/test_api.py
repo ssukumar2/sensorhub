@@ -457,3 +457,31 @@ def test_readings_count_returns_int():
     response = client.get("/readings/count")
     assert response.status_code == 200
     assert isinstance(response.json()["count"], int)
+
+
+def test_readings_filter_by_min_value():
+    reg = client.post("/sensors", json={"name": "range-min", "location": "lab"}).json()
+    for v in (5.0, 15.0, 25.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/readings?min_value=10")
+    assert response.status_code == 200
+    body = response.json()
+    assert all(r["value"] >= 10 for r in body)
+    assert len(body) == 2
+
+
+def test_readings_filter_by_max_value():
+    reg = client.post("/sensors", json={"name": "range-max", "location": "lab"}).json()
+    for v in (5.0, 15.0, 25.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/readings?max_value=20")
+    assert response.status_code == 200
+    body = response.json()
+    assert all(r["value"] <= 20 for r in body)
+    assert len(body) == 2
+
+
+def test_readings_filter_rejects_inverted_range():
+    reg = client.post("/sensors", json={"name": "range-bad", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/readings?min_value=100&max_value=10")
+    assert response.status_code == 400
