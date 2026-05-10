@@ -130,6 +130,12 @@ def readings_by_unit(unit: str, limit: int = 50, session: Session = Depends(get_
     return rows
 
 
+@app.get("/readings/count")
+def count_readings(session: Session = Depends(get_session)):
+    """Return total reading count across all sensors."""
+    return {"count": len(session.exec(select(Reading)).all())}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
