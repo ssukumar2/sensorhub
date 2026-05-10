@@ -382,19 +382,23 @@ def readings_by_unit(unit: str, limit: int = 50, session: Session = Depends(get_
 def list_readings_for_sensor(
     sensor_id: int,
     limit: int = 100,
+    min_value: float = None,
+    max_value: float = None,
     session: Session = Depends(get_session),
 ):
     """List recent readings for a sensor, most recent first."""
+    if min_value is not None and max_value is not None and min_value > max_value:
+        raise HTTPException(status_code=400, detail="min_value cannot exceed max_value")
     sensor = session.get(Sensor, sensor_id)
     if sensor is None:
         raise HTTPException(status_code=404, detail="sensor not found")
 
-    statement = (
-        select(Reading)
-        .where(Reading.sensor_id == sensor_id)
-        .order_by(Reading.recorded_at.desc())
-        .limit(limit)
-    )
+    statement = select(Reading).where(Reading.sensor_id == sensor_id)
+    if min_value is not None:
+        statement = statement.where(Reading.value >= min_value)
+    if max_value is not None:
+        statement = statement.where(Reading.value <= max_value)
+    statement = statement.order_by(Reading.recorded_at.desc()).limit(limit)
     return session.exec(statement).all()
 
 
