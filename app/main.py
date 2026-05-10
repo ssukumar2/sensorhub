@@ -143,6 +143,16 @@ def sensors_by_location(location: str, session: Session = Depends(get_session)):
     return rows
 
 
+@app.get("/sensors/{sensor_id}/readings/count")
+def count_sensor_readings(sensor_id: int, session: Session = Depends(get_session)):
+    """Return reading count for a specific sensor."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(select(Reading).where(Reading.sensor_id == sensor_id)).all()
+    return {"sensor_id": sensor_id, "count": len(rows)}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

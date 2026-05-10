@@ -513,3 +513,18 @@ def test_readings_recent_includes_recorded_at():
     matched = [r for r in body if r["sensor_name"] == "ts-sensor"]
     assert matched
     assert matched[0]["recorded_at"] is not None
+
+
+def test_sensor_readings_count():
+    reg = client.post("/sensors", json={"name": "count-per", "location": "lab"}).json()
+    for v in (1.0, 2.0, 3.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/readings/count")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 3
+    assert body["sensor_id"] == reg["id"]
+
+
+def test_sensor_readings_count_unknown_sensor():
+    assert client.get("/sensors/99999/readings/count").status_code == 404
