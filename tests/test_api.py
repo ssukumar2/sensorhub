@@ -451,3 +451,9 @@ def test_readings_by_unit_filters():
 
 def test_readings_by_unit_bad_limit():
     assert client.get("/readings/by-unit/celsius?limit=0").status_code == 400
+
+
+def test_readings_count_returns_int():
+    response = client.get("/readings/count")
+    assert response.status_code == 200
+    assert isinstance(response.json()["count"], int)
