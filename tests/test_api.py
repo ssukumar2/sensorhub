@@ -485,3 +485,20 @@ def test_readings_filter_rejects_inverted_range():
     reg = client.post("/sensors", json={"name": "range-bad", "location": "lab"}).json()
     response = client.get(f"/sensors/{reg['id']}/readings?min_value=100&max_value=10")
     assert response.status_code == 400
+
+
+def test_sensors_by_location_returns_matches():
+    client.post("/sensors", json={"name": "by-loc-a", "location": "lab-7"}).json()
+    client.post("/sensors", json={"name": "by-loc-b", "location": "lab-7"}).json()
+    client.post("/sensors", json={"name": "by-loc-c", "location": "lab-other"}).json()
+    response = client.get("/sensors/by-location/lab-7")
+    assert response.status_code == 200
+    body = response.json()
+    assert all(s["location"] == "lab-7" for s in body)
+    assert len(body) >= 2
+
+
+def test_sensors_by_location_empty_when_unknown():
+    response = client.get("/sensors/by-location/nowhere-xyz")
+    assert response.status_code == 200
+    assert response.json() == []
