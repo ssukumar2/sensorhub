@@ -502,3 +502,14 @@ def test_sensors_by_location_empty_when_unknown():
     response = client.get("/sensors/by-location/nowhere-xyz")
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_readings_recent_includes_recorded_at():
+    reg = client.post("/sensors", json={"name": "ts-sensor", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get("/readings/recent?limit=5")
+    assert response.status_code == 200
+    body = response.json()
+    matched = [r for r in body if r["sensor_name"] == "ts-sensor"]
+    assert matched
+    assert matched[0]["recorded_at"] is not None
