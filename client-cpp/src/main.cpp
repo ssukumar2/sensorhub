@@ -27,6 +27,24 @@ int main(int argc, char* argv[])
 {
     std::signal(SIGINT, handle_sigint);
 
+    for (int i = 1; i < argc; ++i)
+    {
+        std::string a = argv[i];
+        if (a == "--help" || a == "-h")
+        {
+            std::cout << "usage: sensor_client [options]\n"
+                      << "  --mode=http|mqtt|can     transport (default http)\n"
+                      << "  --backend=URL            backend base url\n"
+                      << "  --mqtt=URL               mqtt broker url\n"
+                      << "  --can=IFACE              can interface (default vcan0)\n"
+                      << "  --name=NAME              sensor name\n"
+                      << "  --location=LOC           sensor location\n"
+                      << "  --interval=N             seconds between readings\n"
+                      << "  --log-level=debug|info|warn|error\n"
+                      << "  --help                   this message\n";
+            return 0;
+        }
+    }
     ClientConfig cfg = ClientConfig::from_args(argc, argv);
     if (cfg.log_level == "debug") Logger::instance().set_level(Logger::Level::Debug);
     else if (cfg.log_level == "warn") Logger::instance().set_level(Logger::Level::Warn);
