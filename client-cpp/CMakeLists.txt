@@ -32,6 +32,7 @@ FetchContent_MakeAvailable(paho-mqtt-c)
 
 add_executable(sensor_client
     src/main.cpp
+    src/config.cpp
     src/backend_client.cpp
     src/mqtt_client.cpp
     src/hmac_signer.cpp

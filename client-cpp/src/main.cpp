@@ -1,4 +1,8 @@
+#include "config.hpp"
+#include "logger.hpp"
+#include "metrics.hpp"
 #include "backend_client.hpp"
+#include "retry_policy.hpp"
 #include "mqtt_client.hpp"
 
 #include "can_transport.hpp"
@@ -23,35 +27,38 @@ int main(int argc, char* argv[])
 {
     std::signal(SIGINT, handle_sigint);
 
-    std::string backend_url = "http://localhost:8000";
-    std::string mqtt_url = "tcp://localhost:1883";
-    std::string mode = "http";  // "http" or "mqtt"
-
-    // Simple arg parsing: --mode=mqtt, --backend=..., --mqtt=...
-    for (int i = 1; i < argc; ++i) 
+    for (int i = 1; i < argc; ++i)
     {
-        std::string arg = argv[i];
-        if (arg.rfind("--mode=", 0) == 0) 
+        std::string a = argv[i];
+        if (a == "--help" || a == "-h")
         {
-            mode = arg.substr(7);
-        } else if (arg.rfind("--backend=", 0) == 0) 
-        {
-            backend_url = arg.substr(10);
-        } else if (arg.rfind("--mqtt=", 0) == 0) 
-        {
-            mqtt_url = arg.substr(7);
+            std::cout << "usage: sensor_client [options]\n"
+                      << "  --mode=http|mqtt|can     transport (default http)\n"
+                      << "  --backend=URL            backend base url\n"
+                      << "  --mqtt=URL               mqtt broker url\n"
+                      << "  --can=IFACE              can interface (default vcan0)\n"
+                      << "  --name=NAME              sensor name\n"
+                      << "  --location=LOC           sensor location\n"
+                      << "  --interval=N             seconds between readings\n"
+                      << "  --log-level=debug|info|warn|error\n"
+                      << "  --help                   this message\n";
+            return 0;
         }
     }
-    std::cout << "mode: " << mode << std::endl;
+    ClientConfig cfg = ClientConfig::from_args(argc, argv);
+    if (cfg.log_level == "debug") Logger::instance().set_level(Logger::Level::Debug);
+    else if (cfg.log_level == "warn") Logger::instance().set_level(Logger::Level::Warn);
+    else if (cfg.log_level == "error") Logger::instance().set_level(Logger::Level::Error);
+    Logger::instance().info("mode: " + cfg.mode);
 
     // Always register the sensor via HTTP (we need an API key either way
     // to identify it, and MQTT version uses sensor_id only).
 
-    BackendClient http(backend_url);
+    BackendClient http(cfg.backend_url);
 
     if (!http.check_health()) 
     {
-        std::cerr << "backend not reachable at " << backend_url << std::endl;
+        std::cerr << "backend not reachable at " << cfg.backend_url << std::endl;
         return 1;
     }
 
@@ -60,33 +67,33 @@ int main(int argc, char* argv[])
 
     try 
     {
-        sensor = http.register_sensor("cpp-sensor-01", "lab");
+        sensor = http.register_sensor(cfg.sensor_name, cfg.sensor_location);
     } 
     catch (const std::exception& e) 
     {
-        std::cerr << "registration failed: " << e.what() << std::endl;
+        Logger::instance().error(std::string("registration failed: ") + e.what());
         return 1;
     }
 
-    std::cout << "sensor registered, id=" << sensor.id << std::endl;
+    Logger::instance().info("sensor registered, id=" + std::to_string(sensor.id));
 
     // Random temperature
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> temp_dist(18.0, 28.0);
     int count = 0;
-    const int interval = 5;
+    const int interval = cfg.interval_seconds;
 
-    if (mode == "mqtt") 
+    if (cfg.mode == "mqtt") 
     {
-        MqttClient mqtt(mqtt_url, "sensorhub-cpp-client");
+        MqttClient mqtt(cfg.mqtt_url, "sensorhub-cpp-client");
         if (!mqtt.connect()) 
         {
-            std::cerr << "mqtt connect failed" << std::endl;
+            Logger::instance().error("mqtt connect failed");
             return 1;
         }
 
-        std::cout << "mqtt connected. starting loop..." << std::endl;
+        Logger::instance().info("mqtt connected, starting loop");
 
         while (keep_running) 
         {
@@ -98,7 +105,7 @@ int main(int argc, char* argv[])
             } 
             else 
             {
-                std::cerr << "mqtt publish failed" << std::endl;
+                Logger::instance().error("mqtt publish failed");
             }
             for (int i = 0; i < interval && keep_running; ++i) 
             {
@@ -106,12 +113,12 @@ int main(int argc, char* argv[])
             }
         }
     } 
-    else if (mode == "can")
+    else if (cfg.mode == "can")
     {
-        CanTransport can("vcan0");
+        CanTransport can(cfg.can_iface);
         if (!can.open())
         {
-            std::cerr << "failed to open vcan0" << std::endl;
+            std::cerr << "failed to open " << cfg.can_iface << std::endl;
             return 1;
         }
         std::cout << "CAN mode on vcan0. starting loop..." << std::endl;
@@ -144,18 +151,22 @@ int main(int argc, char* argv[])
     }
     else 
     {
-        std::cout << "http mode. starting loop..." << std::endl;
+        Logger::instance().info("http mode, starting loop");
         while (keep_running) 
         {
             double t = temp_dist(gen);
-            if (http.submit_reading(sensor, t, "celsius")) 
+            RetryPolicy retry(3, 200, 2000);
+            bool ok = retry.run([&]() { return http.submit_reading(sensor, t, "celsius"); });
+            if (ok) 
             {
                 ++count;
+                MetricsCollector::instance().record_success();
                 std::cout << "[" << count << "] http sent " << t << " c" << std::endl;
             } 
             else 
             {
-                std::cerr << "http send failed" << std::endl;
+                MetricsCollector::instance().record_failure();
+                Logger::instance().error("http send failed after retries");
             }
             for (int i = 0; i < interval && keep_running; ++i) 
             {
@@ -164,6 +175,9 @@ int main(int argc, char* argv[])
         }
     }
 
-    std::cout << "\nstopped after " << count << " readings" << std::endl;
+    auto& m = MetricsCollector::instance();
+    std::cout << "\nstopped after " << count << " readings"
+              << " (success=" << m.successes()
+              << " fail=" << m.failures() << ")" << std::endl;
     return 0;
 }

@@ -49,3 +49,8 @@ client-cpp/cmake-build-release/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+
+# python
+**/__pycache__/
+.coverage
+htmlcov/
