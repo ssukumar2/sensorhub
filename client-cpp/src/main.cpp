@@ -27,6 +27,9 @@ int main(int argc, char* argv[])
     std::signal(SIGINT, handle_sigint);
 
     ClientConfig cfg = ClientConfig::from_args(argc, argv);
+    if (cfg.log_level == "debug") Logger::instance().set_level(Logger::Level::Debug);
+    else if (cfg.log_level == "warn") Logger::instance().set_level(Logger::Level::Warn);
+    else if (cfg.log_level == "error") Logger::instance().set_level(Logger::Level::Error);
     Logger::instance().info("mode: " + cfg.mode);
 
     // Always register the sensor via HTTP (we need an API key either way
