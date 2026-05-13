@@ -1,4 +1,5 @@
 #include "backend_client.hpp"
+#include "retry_policy.hpp"
 #include "mqtt_client.hpp"
 
 #include "can_transport.hpp"
@@ -148,14 +149,16 @@ int main(int argc, char* argv[])
         while (keep_running) 
         {
             double t = temp_dist(gen);
-            if (http.submit_reading(sensor, t, "celsius")) 
+            RetryPolicy retry(3, 200, 2000);
+            bool ok = retry.run([&]() { return http.submit_reading(sensor, t, "celsius"); });
+            if (ok) 
             {
                 ++count;
                 std::cout << "[" << count << "] http sent " << t << " c" << std::endl;
             } 
             else 
             {
-                std::cerr << "http send failed" << std::endl;
+                std::cerr << "http send failed after retries" << std::endl;
             }
             for (int i = 0; i < interval && keep_running; ++i) 
             {
