@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "logger.hpp"
 #include "backend_client.hpp"
 #include "retry_policy.hpp"
 #include "mqtt_client.hpp"
@@ -26,7 +27,7 @@ int main(int argc, char* argv[])
     std::signal(SIGINT, handle_sigint);
 
     ClientConfig cfg = ClientConfig::from_args(argc, argv);
-    std::cout << "mode: " << cfg.mode << std::endl;
+    Logger::instance().info("mode: " + cfg.mode);
 
     // Always register the sensor via HTTP (we need an API key either way
     // to identify it, and MQTT version uses sensor_id only).
@@ -48,11 +49,11 @@ int main(int argc, char* argv[])
     } 
     catch (const std::exception& e) 
     {
-        std::cerr << "registration failed: " << e.what() << std::endl;
+        Logger::instance().error(std::string("registration failed: ") + e.what());
         return 1;
     }
 
-    std::cout << "sensor registered, id=" << sensor.id << std::endl;
+    Logger::instance().info("sensor registered, id=" + std::to_string(sensor.id));
 
     // Random temperature
     std::random_device rd;
@@ -66,11 +67,11 @@ int main(int argc, char* argv[])
         MqttClient mqtt(cfg.mqtt_url, "sensorhub-cpp-client");
         if (!mqtt.connect()) 
         {
-            std::cerr << "mqtt connect failed" << std::endl;
+            Logger::instance().error("mqtt connect failed");
             return 1;
         }
 
-        std::cout << "mqtt connected. starting loop..." << std::endl;
+        Logger::instance().info("mqtt connected, starting loop");
 
         while (keep_running) 
         {
@@ -82,7 +83,7 @@ int main(int argc, char* argv[])
             } 
             else 
             {
-                std::cerr << "mqtt publish failed" << std::endl;
+                Logger::instance().error("mqtt publish failed");
             }
             for (int i = 0; i < interval && keep_running; ++i) 
             {
@@ -128,7 +129,7 @@ int main(int argc, char* argv[])
     }
     else 
     {
-        std::cout << "http mode. starting loop..." << std::endl;
+        Logger::instance().info("http mode, starting loop");
         while (keep_running) 
         {
             double t = temp_dist(gen);
@@ -141,7 +142,7 @@ int main(int argc, char* argv[])
             } 
             else 
             {
-                std::cerr << "http send failed after retries" << std::endl;
+                Logger::instance().error("http send failed after retries");
             }
             for (int i = 0; i < interval && keep_running; ++i) 
             {
