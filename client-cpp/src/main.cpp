@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "logger.hpp"
+#include "metrics.hpp"
 #include "backend_client.hpp"
 #include "retry_policy.hpp"
 #include "mqtt_client.hpp"
@@ -141,10 +142,12 @@ int main(int argc, char* argv[])
             if (ok) 
             {
                 ++count;
+                MetricsCollector::instance().record_success();
                 std::cout << "[" << count << "] http sent " << t << " c" << std::endl;
             } 
             else 
             {
+                MetricsCollector::instance().record_failure();
                 Logger::instance().error("http send failed after retries");
             }
             for (int i = 0; i < interval && keep_running; ++i) 
@@ -154,6 +157,9 @@ int main(int argc, char* argv[])
         }
     }
 
-    std::cout << "\nstopped after " << count << " readings" << std::endl;
+    auto& m = MetricsCollector::instance();
+    std::cout << "\nstopped after " << count << " readings"
+              << " (success=" << m.successes()
+              << " fail=" << m.failures() << ")" << std::endl;
     return 0;
 }
