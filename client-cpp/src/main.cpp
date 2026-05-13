@@ -1,3 +1,4 @@
+#include "config.hpp"
 #include "backend_client.hpp"
 #include "retry_policy.hpp"
 #include "mqtt_client.hpp"
@@ -24,35 +25,17 @@ int main(int argc, char* argv[])
 {
     std::signal(SIGINT, handle_sigint);
 
-    std::string backend_url = "http://localhost:8000";
-    std::string mqtt_url = "tcp://localhost:1883";
-    std::string mode = "http";  // "http" or "mqtt"
-
-    // Simple arg parsing: --mode=mqtt, --backend=..., --mqtt=...
-    for (int i = 1; i < argc; ++i) 
-    {
-        std::string arg = argv[i];
-        if (arg.rfind("--mode=", 0) == 0) 
-        {
-            mode = arg.substr(7);
-        } else if (arg.rfind("--backend=", 0) == 0) 
-        {
-            backend_url = arg.substr(10);
-        } else if (arg.rfind("--mqtt=", 0) == 0) 
-        {
-            mqtt_url = arg.substr(7);
-        }
-    }
-    std::cout << "mode: " << mode << std::endl;
+    ClientConfig cfg = ClientConfig::from_args(argc, argv);
+    std::cout << "mode: " << cfg.mode << std::endl;
 
     // Always register the sensor via HTTP (we need an API key either way
     // to identify it, and MQTT version uses sensor_id only).
 
-    BackendClient http(backend_url);
+    BackendClient http(cfg.backend_url);
 
     if (!http.check_health()) 
     {
-        std::cerr << "backend not reachable at " << backend_url << std::endl;
+        std::cerr << "backend not reachable at " << cfg.backend_url << std::endl;
         return 1;
     }
 
@@ -61,7 +44,7 @@ int main(int argc, char* argv[])
 
     try 
     {
-        sensor = http.register_sensor("cpp-sensor-01", "lab");
+        sensor = http.register_sensor(cfg.sensor_name, cfg.sensor_location);
     } 
     catch (const std::exception& e) 
     {
@@ -76,11 +59,11 @@ int main(int argc, char* argv[])
     std::mt19937 gen(rd());
     std::uniform_real_distribution<double> temp_dist(18.0, 28.0);
     int count = 0;
-    const int interval = 5;
+    const int interval = cfg.interval_seconds;
 
-    if (mode == "mqtt") 
+    if (cfg.mode == "mqtt") 
     {
-        MqttClient mqtt(mqtt_url, "sensorhub-cpp-client");
+        MqttClient mqtt(cfg.mqtt_url, "sensorhub-cpp-client");
         if (!mqtt.connect()) 
         {
             std::cerr << "mqtt connect failed" << std::endl;
@@ -107,12 +90,12 @@ int main(int argc, char* argv[])
             }
         }
     } 
-    else if (mode == "can")
+    else if (cfg.mode == "can")
     {
-        CanTransport can("vcan0");
+        CanTransport can(cfg.can_iface);
         if (!can.open())
         {
-            std::cerr << "failed to open vcan0" << std::endl;
+            std::cerr << "failed to open " << cfg.can_iface << std::endl;
             return 1;
         }
         std::cout << "CAN mode on vcan0. starting loop..." << std::endl;
