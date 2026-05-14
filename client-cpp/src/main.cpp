@@ -3,6 +3,7 @@
 #include "metrics.hpp"
 #include "backend_client.hpp"
 #include "retry_policy.hpp"
+#include "health_checker.hpp"
 #include "mqtt_client.hpp"
 
 #include "can_transport.hpp"
@@ -76,6 +77,9 @@ int main(int argc, char* argv[])
     }
 
     Logger::instance().info("sensor registered, id=" + std::to_string(sensor.id));
+
+    HealthChecker health_checker(http, 30);
+    health_checker.start();
 
     // Random temperature
     std::random_device rd;
