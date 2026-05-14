@@ -106,10 +106,12 @@ int main(int argc, char* argv[])
             if (mqtt.publish_reading(sensor.id, t, "celsius")) 
             {
                 ++count;
+                MetricsCollector::instance().record_success();
                 std::cout << "[" << count << "] mqtt published " << t << " c" << std::endl;
             } 
             else 
             {
+                MetricsCollector::instance().record_failure();
                 Logger::instance().error("mqtt publish failed");
             }
             for (int i = 0; i < interval && keep_running; ++i) 
@@ -142,11 +144,13 @@ int main(int argc, char* argv[])
             if (can.send_frame(can_id, frame_data))
             {
                 ++count;
+                MetricsCollector::instance().record_success();
                 std::cout << "[" << count << "] CAN 0x" << std::hex << can_id
                           << std::dec << " " << t << " c" << std::endl;
             }
             else
             {
+                MetricsCollector::instance().record_failure();
                 std::cerr << "CAN send failed" << std::endl;
             }
 
