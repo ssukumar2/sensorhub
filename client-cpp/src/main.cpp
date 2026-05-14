@@ -3,6 +3,7 @@
 #include "metrics.hpp"
 #include "backend_client.hpp"
 #include "retry_policy.hpp"
+#include "health_checker.hpp"
 #include "mqtt_client.hpp"
 
 #include "can_transport.hpp"
@@ -77,6 +78,10 @@ int main(int argc, char* argv[])
 
     Logger::instance().info("sensor registered, id=" + std::to_string(sensor.id));
 
+    HealthChecker health_checker(http, 30);
+    if (cfg.health_check)
+        health_checker.start();
+
     // Random temperature
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -101,10 +106,12 @@ int main(int argc, char* argv[])
             if (mqtt.publish_reading(sensor.id, t, "celsius")) 
             {
                 ++count;
+                MetricsCollector::instance().record_success();
                 std::cout << "[" << count << "] mqtt published " << t << " c" << std::endl;
             } 
             else 
             {
+                MetricsCollector::instance().record_failure();
                 Logger::instance().error("mqtt publish failed");
             }
             for (int i = 0; i < interval && keep_running; ++i) 
@@ -137,11 +144,13 @@ int main(int argc, char* argv[])
             if (can.send_frame(can_id, frame_data))
             {
                 ++count;
+                MetricsCollector::instance().record_success();
                 std::cout << "[" << count << "] CAN 0x" << std::hex << can_id
                           << std::dec << " " << t << " c" << std::endl;
             }
             else
             {
+                MetricsCollector::instance().record_failure();
                 std::cerr << "CAN send failed" << std::endl;
             }
 
@@ -175,9 +184,12 @@ int main(int argc, char* argv[])
         }
     }
 
+    health_checker.stop();
     auto& m = MetricsCollector::instance();
     std::cout << "\nstopped after " << count << " readings"
               << " (success=" << m.successes()
-              << " fail=" << m.failures() << ")" << std::endl;
+              << " fail=" << m.failures()
+              << " backend_healthy=" << (health_checker.is_healthy() ? "yes" : "no")
+              << ")" << std::endl;
     return 0;
 }

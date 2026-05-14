@@ -1,38 +1,37 @@
 # sensorhub C++ client
 
-A C++ program that simulates a real sensor device. It connects to the sensorhub backend, registers itself, gets an API key, and starts sending temperature readings every 5 seconds. Works over both HTTP and MQTT.
+Sensor client for the sensorhub gateway. Sends signed telemetry over HTTP, MQTT, or CAN.
 
-## Building
+## Build
 
-From the client-cpp directory:
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
 
-    cmake -B build
-    cmake --build build
+## Run
 
-## Running
+./sensor_client --help
 
-HTTP mode (default):
+### Options
 
-    ./build/sensor_client --mode=http
+- --mode=http|mqtt|can  transport (default http)
+- --backend=URL  backend base url
+- --mqtt=URL  mqtt broker url
+- --can=IFACE  can interface (default vcan0)
+- --name=NAME  sensor name
+- --location=LOC  sensor location
+- --interval=N  seconds between readings
+- --log-level=debug|info|warn|error
+- --no-health-check  disable background health polling
+- --help  usage
 
-MQTT mode (needs Mosquitto broker running): cd sensor_client (again)
+## Components
 
-    ./build/sensor_client --mode=mqtt
-
-Custom backend URL:
-
-    ./build/sensor_client --backend=http://192.168.1.50:8000
-
-## How it works
-
-The client goes through these steps on startup:
-
-1. Checks if the backend is healthy
-2. Registers a new sensor and receives an API key
-3. Starts a loop sending random temperature readings every 5 seconds
-4. Each reading is signed with HMAC-SHA256 for integrity
-5. Press Ctrl+C to stop cleanly
-
-## Security
-
-Every reading the client sends is protected with API key authentication, HMAC-SHA256 signatures covering the payload with a unique nonce and timestamp, and constant-time comparison on the server side to prevent timing attacks. The server rejects any request with a tampered payload or a timestamp older than 30 seconds.
+- BackendClient  HTTP communication, HMAC-signed reading submission
+- MqttClient  MQTT publishing
+- CanTransport  CAN frame transport
+- HmacSigner  HMAC-SHA256 request signing
+- RetryPolicy  exponential backoff for transient failures
+- HealthChecker  background backend health monitor
+- Logger  level-based logging
+- MetricsCollector  in-memory success/failure counters

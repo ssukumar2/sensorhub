@@ -12,6 +12,7 @@ struct ClientConfig
     std::string mode = "http";
     int interval_seconds = 5;
     std::string log_level = "info";
+    bool health_check = true;
 
     static ClientConfig from_args(int argc, char* argv[]);
 };
