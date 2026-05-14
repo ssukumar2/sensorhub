@@ -536,3 +536,27 @@ def test_readings_units_returns_list():
     response = client.get("/readings/units")
     assert response.status_code == 200
     assert "kelvin" in response.json()["units"]
+
+
+def test_sensor_reading_range_empty():
+    reg = client.post("/sensors", json={"name": "range-empty", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/readings/range")
+    assert response.status_code == 200
+    assert response.json()["count"] == 0
+    assert response.json()["first"] is None
+
+
+def test_sensor_reading_range_populated():
+    reg = client.post("/sensors", json={"name": "range-pop", "location": "lab"}).json()
+    for v in (1.0, 2.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/readings/range")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 2
+    assert body["first"] is not None
+    assert body["last"] is not None
+
+
+def test_sensor_reading_range_unknown():
+    assert client.get("/sensors/99999/readings/range").status_code == 404
