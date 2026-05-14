@@ -4,15 +4,25 @@ Database models and request/response schemas.
 Two tables:
 - Sensor: a device registered with the gateway
 - Reading: one telemetry data point from a sensor
-
-Kept deliberately small for day 1. We'll add authentication fields later.
 """
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 import secrets
 
 from sqlmodel import Field, SQLModel
-from enum import Enum
+
+
+# -------- Enums --------
+
+class SensorType(str, Enum):
+    TEMPERATURE = "temperature"
+    HUMIDITY = "humidity"
+    VOLTAGE = "voltage"
+    CURRENT = "current"
+    POWER = "power"
+    PRESSURE = "pressure"
+
 
 # -------- Database tables --------
 
@@ -35,29 +45,10 @@ class Reading(SQLModel, table=True):
 
 
 # -------- Request/response schemas --------
-# (separate from the table models so the API contract is explicit)
 
 class SensorCreate(SQLModel):
     name: str
     location: str
-
-
-class ReadingCreate(SQLModel):
-    sensor_id: int
-    value: float
-    unit: str
-
-class SensorType(str, Enum):
-    from enum import Enum
-
-
-class SensorType(str, Enum):
-    TEMPERATURE = "temperature"
-    HUMIDITY = "humidity"
-    VOLTAGE = "voltage"
-    CURRENT = "current"
-    POWER = "power"
-    PRESSURE = "pressure"
 
 
 class ReadingCreate(SQLModel):
