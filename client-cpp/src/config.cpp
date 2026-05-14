@@ -16,6 +16,7 @@ ClientConfig ClientConfig::from_args(int argc, char* argv[])
         else if (arg.rfind("--location=", 0) == 0) c.sensor_location = arg.substr(11);
         else if (arg.rfind("--interval=", 0) == 0) c.interval_seconds = std::stoi(arg.substr(11));
         else if (arg.rfind("--log-level=", 0) == 0) c.log_level = arg.substr(12);
+        else if (arg == "--no-health-check") c.health_check = false;
     }
     return c;
 }

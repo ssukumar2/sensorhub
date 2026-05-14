@@ -79,7 +79,8 @@ int main(int argc, char* argv[])
     Logger::instance().info("sensor registered, id=" + std::to_string(sensor.id));
 
     HealthChecker health_checker(http, 30);
-    health_checker.start();
+    if (cfg.health_check)
+        health_checker.start();
 
     // Random temperature
     std::random_device rd;
