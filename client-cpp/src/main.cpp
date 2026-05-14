@@ -180,9 +180,12 @@ int main(int argc, char* argv[])
         }
     }
 
+    health_checker.stop();
     auto& m = MetricsCollector::instance();
     std::cout << "\nstopped after " << count << " readings"
               << " (success=" << m.successes()
-              << " fail=" << m.failures() << ")" << std::endl;
+              << " fail=" << m.failures()
+              << " backend_healthy=" << (health_checker.is_healthy() ? "yes" : "no")
+              << ")" << std::endl;
     return 0;
 }
