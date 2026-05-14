@@ -356,44 +356,6 @@ def clear_sensor_readings(
     return None
 
 
-@app.get("/sensors/search")
-def search_sensors(q: str, session: Session = Depends(get_session)):
-    """Search sensors by name or location substring."""
-    if not q or len(q) < 2:
-        raise HTTPException(status_code=400, detail="query must be at least 2 chars")
-    rows = session.exec(select(Sensor)).all()
-    ql = q.lower()
-    return [s for s in rows if ql in s.name.lower() or ql in (s.location or "").lower()]
-
-
-@app.delete("/sensors/{sensor_id}/readings", status_code=204)
-def clear_sensor_readings(
-    sensor_id: int,
-    x_api_key: str = Header(...),
-    session: Session = Depends(get_session),
-):
-    """Delete all readings for a sensor (sensor itself stays)."""
-    sensor = session.get(Sensor, sensor_id)
-    if sensor is None:
-        raise HTTPException(status_code=404, detail="sensor not found")
-    if not secrets.compare_digest(sensor.api_key, x_api_key):
-        raise HTTPException(status_code=401, detail="invalid api key")
-    rows = session.exec(select(Reading).where(Reading.sensor_id == sensor_id)).all()
-    for r in rows:
-        session.delete(r)
-    session.commit()
-    return None
-
-
-@app.get("/readings/by-unit/{unit}")
-def readings_by_unit(unit: str, limit: int = 50, session: Session = Depends(get_session)):
-    """Return recent readings filtered by unit."""
-    if limit < 1 or limit > 500:
-        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
-    rows = session.exec(
-        select(Reading).where(Reading.unit == unit).order_by(Reading.id.desc()).limit(limit)
-    ).all()
-    return rows
 
 
 @app.get("/sensors/{sensor_id}/readings", response_model=List[Reading])
