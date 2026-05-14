@@ -160,6 +160,25 @@ def list_units(session: Session = Depends(get_session)):
     return {"units": sorted(set(rows))}
 
 
+@app.get("/sensors/{sensor_id}/readings/range")
+def sensor_reading_range(sensor_id: int, session: Session = Depends(get_session)):
+    """Return the time span of readings for a sensor."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id).order_by(Reading.recorded_at)
+    ).all()
+    if not rows:
+        return {"sensor_id": sensor_id, "first": None, "last": None, "count": 0}
+    return {
+        "sensor_id": sensor_id,
+        "first": rows[0].recorded_at.isoformat(),
+        "last": rows[-1].recorded_at.isoformat(),
+        "count": len(rows),
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
