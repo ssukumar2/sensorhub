@@ -56,3 +56,8 @@ class ReadingCreate(SQLModel):
     value: float
     unit: str
     sensor_type: str = "temperature"
+
+
+class SensorUpdate(SQLModel):
+    name: Optional[str] = None
+    location: Optional[str] = None
