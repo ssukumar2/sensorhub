@@ -528,3 +528,11 @@ def test_sensor_readings_count():
 
 def test_sensor_readings_count_unknown_sensor():
     assert client.get("/sensors/99999/readings/count").status_code == 404
+
+
+def test_readings_units_returns_list():
+    reg = client.post("/sensors", json={"name": "units-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "kelvin"}, reg["api_key"])
+    response = client.get("/readings/units")
+    assert response.status_code == 200
+    assert "kelvin" in response.json()["units"]
