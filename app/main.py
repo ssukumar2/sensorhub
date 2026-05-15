@@ -2,6 +2,7 @@
 SensorHUb — secure sensor network gateway.
 
 """
+import os
 import secrets
 from contextlib import asynccontextmanager
 from typing import List
@@ -18,6 +19,9 @@ from app.models import (
 )
 from app.security.dependencies import require_signed_sensor
 from app.firmware import tracker as firmware_tracker
+
+FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
+os.makedirs(FIRMWARE_DIR, exist_ok=True)
 from app.middleware import RateLimiter
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -193,6 +197,31 @@ def set_latest_firmware(version: str, url: str = ""):
         raise HTTPException(status_code=400, detail="version required")
     firmware_tracker.set_latest(version, url)
     return firmware_tracker.latest()
+
+
+@app.post("/firmware/upload")
+async def upload_firmware(version: str, request: Request):
+    """Upload a firmware binary. Body is the raw file."""
+    if not version:
+        raise HTTPException(status_code=400, detail="version required")
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="empty body")
+    path = os.path.join(FIRMWARE_DIR, f"{version}.bin")
+    with open(path, "wb") as f:
+        f.write(body)
+    firmware_tracker.set_latest(version, f"/firmware/download/{version}")
+    return {"version": version, "size": len(body), "path": path}
+
+
+@app.get("/firmware/download/{version}")
+def download_firmware(version: str):
+    """Stream a firmware binary back."""
+    from fastapi.responses import FileResponse
+    path = os.path.join(FIRMWARE_DIR, f"{version}.bin")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="firmware not found")
+    return FileResponse(path, media_type="application/octet-stream", filename=f"firmware-{version}.bin")
 
 
 @app.get("/firmware/check")
