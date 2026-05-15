@@ -7,7 +7,7 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlmodel import Session, select
 
 from app.database import init_db, get_session
