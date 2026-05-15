@@ -560,3 +560,51 @@ def test_sensor_reading_range_populated():
 
 def test_sensor_reading_range_unknown():
     assert client.get("/sensors/99999/readings/range").status_code == 404
+
+
+def test_firmware_set_and_get_latest():
+    response = client.post("/firmware/latest?version=3.0.0&url=https://example.com/fw.bin")
+    assert response.status_code == 200
+    assert response.json()["version"] == "3.0.0"
+    response = client.get("/firmware/latest")
+    assert response.json()["version"] == "3.0.0"
+
+
+def test_firmware_set_latest_requires_version():
+    assert client.post("/firmware/latest?version=").status_code == 400
+
+
+def test_firmware_check_update_available():
+    client.post("/firmware/latest?version=5.0.0&url=https://example.com/fw5.bin")
+    response = client.get("/firmware/check?current_version=4.0.0")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["update_available"] is True
+    assert body["latest"] == "5.0.0"
+
+
+def test_firmware_check_up_to_date():
+    client.post("/firmware/latest?version=5.0.0")
+    response = client.get("/firmware/check?current_version=5.0.0")
+    assert response.json()["update_available"] is False
+
+
+def test_firmware_upload_and_download():
+    payload = b"FAKE FIRMWARE BINARY \x00\x01\x02\x03"
+    response = client.post("/firmware/upload?version=7.0.0", content=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["version"] == "7.0.0"
+    assert body["size"] == len(payload)
+    response = client.get("/firmware/download/7.0.0")
+    assert response.status_code == 200
+    assert response.content == payload
+
+
+def test_firmware_upload_rejects_empty():
+    response = client.post("/firmware/upload?version=8.0.0", content=b"")
+    assert response.status_code == 400
+
+
+def test_firmware_download_404_for_unknown():
+    assert client.get("/firmware/download/nope-9.9.9").status_code == 404

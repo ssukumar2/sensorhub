@@ -2,6 +2,7 @@
 #include "logger.hpp"
 #include "metrics.hpp"
 #include "backend_client.hpp"
+#include "firmware_client.hpp"
 #include "retry_policy.hpp"
 #include "health_checker.hpp"
 #include "mqtt_client.hpp"
@@ -81,6 +82,15 @@ int main(int argc, char* argv[])
     HealthChecker health_checker(http, 30);
     if (cfg.health_check)
         health_checker.start();
+
+    const std::string current_version = "0.1.0";
+    FirmwareClient firmware(cfg.backend_url);
+    firmware.report(sensor.id, sensor.api_key, current_version, __DATE__);
+    auto check = firmware.check(current_version);
+    if (check.update_available)
+        Logger::instance().info("firmware update available: " + check.latest + " (current: " + current_version + ")");
+    else
+        Logger::instance().info("firmware up to date: " + current_version);
 
     // Random temperature
     std::random_device rd;

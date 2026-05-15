@@ -2,11 +2,12 @@
 SensorHUb — secure sensor network gateway.
 
 """
+import os
 import secrets
 from contextlib import asynccontextmanager
 from typing import List
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlmodel import Session, select
 
 from app.database import init_db, get_session
@@ -17,6 +18,10 @@ from app.models import (
     ReadingCreate,
 )
 from app.security.dependencies import require_signed_sensor
+from app.firmware import tracker as firmware_tracker
+
+FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
+os.makedirs(FIRMWARE_DIR, exist_ok=True)
 from app.middleware import RateLimiter
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -177,6 +182,105 @@ def sensor_reading_range(sensor_id: int, session: Session = Depends(get_session)
         "last": rows[-1].recorded_at.isoformat(),
         "count": len(rows),
     }
+
+
+@app.get("/firmware/latest")
+def get_latest_firmware():
+    """Return the latest available firmware version and download url."""
+    return firmware_tracker.latest()
+
+
+@app.post("/firmware/latest")
+def set_latest_firmware(version: str, url: str = ""):
+    """Admin: set the latest available firmware version."""
+    if not version:
+        raise HTTPException(status_code=400, detail="version required")
+    firmware_tracker.set_latest(version, url)
+    return firmware_tracker.latest()
+
+
+@app.post("/firmware/upload")
+async def upload_firmware(version: str, request: Request):
+    """Upload a firmware binary. Body is the raw file."""
+    if not version:
+        raise HTTPException(status_code=400, detail="version required")
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="empty body")
+    path = os.path.join(FIRMWARE_DIR, f"{version}.bin")
+    with open(path, "wb") as f:
+        f.write(body)
+    firmware_tracker.set_latest(version, f"/firmware/download/{version}")
+    return {"version": version, "size": len(body), "path": path}
+
+
+@app.get("/firmware/download/{version}")
+def download_firmware(version: str):
+    """Stream a firmware binary back."""
+    from fastapi.responses import FileResponse
+    path = os.path.join(FIRMWARE_DIR, f"{version}.bin")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="firmware not found")
+    return FileResponse(path, media_type="application/octet-stream", filename=f"firmware-{version}.bin")
+
+
+@app.get("/firmware/check")
+def check_firmware_update(current_version: str):
+    """Device asks: am I up to date?"""
+    latest = firmware_tracker.latest()
+    if not latest["version"]:
+        return {"update_available": False, "current": current_version, "latest": None}
+    return {
+        "update_available": current_version != latest["version"],
+        "current": current_version,
+        "latest": latest["version"],
+        "url": latest["url"],
+    }
+
+
+@app.get("/firmware/latest")
+def get_latest_firmware():
+    """Return the latest available firmware version and download url."""
+    return firmware_tracker.latest()
+
+
+@app.post("/firmware/latest")
+def set_latest_firmware(version: str, url: str = ""):
+    """Admin: set the latest available firmware version."""
+    if not version:
+        raise HTTPException(status_code=400, detail="version required")
+    firmware_tracker.set_latest(version, url)
+    return firmware_tracker.latest()
+
+
+@app.post("/firmware/report")
+def report_firmware(
+    sensor_id: int,
+    version: str,
+    build_date: str = "",
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Device reports its current firmware version."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    firmware_tracker.report(sensor_id, version, build_date)
+    return {"sensor_id": sensor_id, "version": version, "status": "recorded"}
+
+
+@app.get("/firmware/devices")
+def list_firmware_devices():
+    """Return firmware info for all reporting devices."""
+    return [fw.__dict__ for fw in firmware_tracker.get_all()]
+
+
+@app.get("/firmware/summary")
+def firmware_summary():
+    """Return aggregate firmware version counts."""
+    return firmware_tracker.summary()
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
