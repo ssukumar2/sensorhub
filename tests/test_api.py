@@ -560,3 +560,30 @@ def test_sensor_reading_range_populated():
 
 def test_sensor_reading_range_unknown():
     assert client.get("/sensors/99999/readings/range").status_code == 404
+
+
+def test_firmware_set_and_get_latest():
+    response = client.post("/firmware/latest?version=3.0.0&url=https://example.com/fw.bin")
+    assert response.status_code == 200
+    assert response.json()["version"] == "3.0.0"
+    response = client.get("/firmware/latest")
+    assert response.json()["version"] == "3.0.0"
+
+
+def test_firmware_set_latest_requires_version():
+    assert client.post("/firmware/latest?version=").status_code == 400
+
+
+def test_firmware_check_update_available():
+    client.post("/firmware/latest?version=5.0.0&url=https://example.com/fw5.bin")
+    response = client.get("/firmware/check?current_version=4.0.0")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["update_available"] is True
+    assert body["latest"] == "5.0.0"
+
+
+def test_firmware_check_up_to_date():
+    client.post("/firmware/latest?version=5.0.0")
+    response = client.get("/firmware/check?current_version=5.0.0")
+    assert response.json()["update_available"] is False

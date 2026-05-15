@@ -195,6 +195,20 @@ def set_latest_firmware(version: str, url: str = ""):
     return firmware_tracker.latest()
 
 
+@app.get("/firmware/check")
+def check_firmware_update(current_version: str):
+    """Device asks: am I up to date?"""
+    latest = firmware_tracker.latest()
+    if not latest["version"]:
+        return {"update_available": False, "current": current_version, "latest": None}
+    return {
+        "update_available": current_version != latest["version"],
+        "current": current_version,
+        "latest": latest["version"],
+        "url": latest["url"],
+    }
+
+
 @app.post("/firmware/report")
 def report_firmware(
     sensor_id: int,
