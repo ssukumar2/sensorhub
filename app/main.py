@@ -180,6 +180,21 @@ def sensor_reading_range(sensor_id: int, session: Session = Depends(get_session)
     }
 
 
+@app.get("/firmware/latest")
+def get_latest_firmware():
+    """Return the latest available firmware version and download url."""
+    return firmware_tracker.latest()
+
+
+@app.post("/firmware/latest")
+def set_latest_firmware(version: str, url: str = ""):
+    """Admin: set the latest available firmware version."""
+    if not version:
+        raise HTTPException(status_code=400, detail="version required")
+    firmware_tracker.set_latest(version, url)
+    return firmware_tracker.latest()
+
+
 @app.post("/firmware/report")
 def report_firmware(
     sensor_id: int,
