@@ -17,6 +17,7 @@ from app.models import (
     ReadingCreate,
 )
 from app.security.dependencies import require_signed_sensor
+from app.firmware import tracker as firmware_tracker
 from app.middleware import RateLimiter
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -177,6 +178,36 @@ def sensor_reading_range(sensor_id: int, session: Session = Depends(get_session)
         "last": rows[-1].recorded_at.isoformat(),
         "count": len(rows),
     }
+
+
+@app.post("/firmware/report")
+def report_firmware(
+    sensor_id: int,
+    version: str,
+    build_date: str = "",
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Device reports its current firmware version."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    firmware_tracker.report(sensor_id, version, build_date)
+    return {"sensor_id": sensor_id, "version": version, "status": "recorded"}
+
+
+@app.get("/firmware/devices")
+def list_firmware_devices():
+    """Return firmware info for all reporting devices."""
+    return [fw.__dict__ for fw in firmware_tracker.get_all()]
+
+
+@app.get("/firmware/summary")
+def firmware_summary():
+    """Return aggregate firmware version counts."""
+    return firmware_tracker.summary()
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
