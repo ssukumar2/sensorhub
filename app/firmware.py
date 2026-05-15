@@ -16,6 +16,15 @@ class FirmwareInfo:
 class FirmwareTracker:
     def __init__(self):
         self._versions: dict[int, FirmwareInfo] = {}
+        self._latest_version: str = ""
+        self._latest_url: str = ""
+
+    def set_latest(self, version: str, url: str = ""):
+        self._latest_version = version
+        self._latest_url = url
+
+    def latest(self) -> dict:
+        return {"version": self._latest_version, "url": self._latest_url}
 
     def report(self, sensor_id: int, version: str, build_date: str = ""):
         self._versions[sensor_id] = FirmwareInfo(
