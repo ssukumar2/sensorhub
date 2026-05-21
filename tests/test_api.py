@@ -628,3 +628,17 @@ def test_firmware_download_has_sha256_header():
     import hashlib
     expected = hashlib.sha256(payload).hexdigest()
     assert response.headers.get("x-sha256") == expected
+
+
+def test_firmware_versions_lists_uploads():
+    client.post("/firmware/upload?version=vlist-1.0", content=b"a")
+    client.post("/firmware/upload?version=vlist-2.0", content=b"bb")
+    response = client.get("/firmware/versions")
+    assert response.status_code == 200
+    body = response.json()
+    versions = [v["version"] for v in body]
+    assert "vlist-1.0" in versions
+    assert "vlist-2.0" in versions
+    vlist1 = next(v for v in body if v["version"] == "vlist-1.0")
+    assert vlist1["size"] == 1
+    assert vlist1["sha256"]
