@@ -200,6 +200,24 @@ def set_latest_firmware(version: str, url: str = ""):
     return firmware_tracker.latest()
 
 
+@app.get("/firmware/versions")
+def list_firmware_versions():
+    """List all uploaded firmware binaries with size and sha."""
+    out = []
+    for fname in sorted(os.listdir(FIRMWARE_DIR)):
+        if not fname.endswith(".bin"):
+            continue
+        version = fname[:-4]
+        path = os.path.join(FIRMWARE_DIR, fname)
+        sha_path = path + ".sha256"
+        sha = ""
+        if os.path.exists(sha_path):
+            with open(sha_path) as f:
+                sha = f.read().strip()
+        out.append({"version": version, "size": os.path.getsize(path), "sha256": sha})
+    return out
+
+
 @app.post("/firmware/upload")
 async def upload_firmware(version: str, request: Request):
     """Upload a firmware binary. Body is the raw file."""
