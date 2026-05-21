@@ -2,6 +2,7 @@
 SensorHUb — secure sensor network gateway.
 
 """
+import hashlib
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -199,6 +200,37 @@ def set_latest_firmware(version: str, url: str = ""):
     return firmware_tracker.latest()
 
 
+@app.get("/firmware/versions")
+def list_firmware_versions():
+    """List all uploaded firmware binaries with size and sha."""
+    out = []
+    for fname in sorted(os.listdir(FIRMWARE_DIR)):
+        if not fname.endswith(".bin"):
+            continue
+        version = fname[:-4]
+        path = os.path.join(FIRMWARE_DIR, fname)
+        sha_path = path + ".sha256"
+        sha = ""
+        if os.path.exists(sha_path):
+            with open(sha_path) as f:
+                sha = f.read().strip()
+        out.append({"version": version, "size": os.path.getsize(path), "sha256": sha})
+    return out
+
+
+@app.delete("/firmware/{version}", status_code=204)
+def delete_firmware_version(version: str):
+    """Remove an uploaded firmware binary and its checksum."""
+    path = os.path.join(FIRMWARE_DIR, f"{version}.bin")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="firmware not found")
+    os.remove(path)
+    sha_path = path + ".sha256"
+    if os.path.exists(sha_path):
+        os.remove(sha_path)
+    return None
+
+
 @app.post("/firmware/upload")
 async def upload_firmware(version: str, request: Request):
     """Upload a firmware binary. Body is the raw file."""
@@ -210,18 +242,31 @@ async def upload_firmware(version: str, request: Request):
     path = os.path.join(FIRMWARE_DIR, f"{version}.bin")
     with open(path, "wb") as f:
         f.write(body)
+    sha = hashlib.sha256(body).hexdigest()
+    with open(path + ".sha256", "w") as f:
+        f.write(sha)
     firmware_tracker.set_latest(version, f"/firmware/download/{version}")
-    return {"version": version, "size": len(body), "path": path}
+    return {"version": version, "size": len(body), "sha256": sha, "path": path}
 
 
 @app.get("/firmware/download/{version}")
 def download_firmware(version: str):
-    """Stream a firmware binary back."""
+    """Stream a firmware binary back with x-sha256 integrity header."""
     from fastapi.responses import FileResponse
     path = os.path.join(FIRMWARE_DIR, f"{version}.bin")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="firmware not found")
-    return FileResponse(path, media_type="application/octet-stream", filename=f"firmware-{version}.bin")
+    sha = ""
+    sha_path = path + ".sha256"
+    if os.path.exists(sha_path):
+        with open(sha_path) as f:
+            sha = f.read().strip()
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=f"firmware-{version}.bin",
+        headers={"x-sha256": sha} if sha else None,
+    )
 
 
 @app.get("/firmware/check")

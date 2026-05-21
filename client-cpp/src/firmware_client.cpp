@@ -3,6 +3,9 @@
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <openssl/sha.h>
 #include <utility>
 
 using json = nlohmann::json;
@@ -42,12 +45,33 @@ FirmwareCheckResult FirmwareClient::check(const std::string& current_version)
     return result;
 }
 
-bool FirmwareClient::download(const std::string& version, const std::string& out_path)
+bool FirmwareClient::download(const std::string& version, const std::string& out_path, std::string& expected_sha)
 {
     cpr::Response r = cpr::Get(cpr::Url{backend_url_ + "/firmware/download/" + version});
     if (r.status_code != 200) return false;
     std::ofstream out(out_path, std::ios::binary);
     if (!out) return false;
     out.write(r.text.data(), r.text.size());
-    return out.good();
+    out.close();
+    auto it = r.header.find("x-sha256");
+    if (it != r.header.end()) expected_sha = it->second;
+    return true;
+}
+
+std::string FirmwareClient::sha256_of_file(const std::string& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return "";
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    char buf[8192];
+    while (in.read(buf, sizeof(buf)) || in.gcount())
+        SHA256_Update(&ctx, buf, in.gcount());
+    unsigned char digest[SHA256_DIGEST_LENGTH];
+    SHA256_Final(digest, &ctx);
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+        oss << std::setw(2) << static_cast<int>(digest[i]);
+    return oss.str();
 }

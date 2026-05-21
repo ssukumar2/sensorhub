@@ -608,3 +608,49 @@ def test_firmware_upload_rejects_empty():
 
 def test_firmware_download_404_for_unknown():
     assert client.get("/firmware/download/nope-9.9.9").status_code == 404
+
+
+def test_firmware_upload_returns_sha256():
+    payload = b"checksum test payload"
+    response = client.post("/firmware/upload?version=cs-1.0", content=payload)
+    assert response.status_code == 200
+    body = response.json()
+    import hashlib
+    expected = hashlib.sha256(payload).hexdigest()
+    assert body["sha256"] == expected
+
+
+def test_firmware_download_has_sha256_header():
+    payload = b"header check payload"
+    client.post("/firmware/upload?version=cs-2.0", content=payload)
+    response = client.get("/firmware/download/cs-2.0")
+    assert response.status_code == 200
+    import hashlib
+    expected = hashlib.sha256(payload).hexdigest()
+    assert response.headers.get("x-sha256") == expected
+
+
+def test_firmware_versions_lists_uploads():
+    client.post("/firmware/upload?version=vlist-1.0", content=b"a")
+    client.post("/firmware/upload?version=vlist-2.0", content=b"bb")
+    response = client.get("/firmware/versions")
+    assert response.status_code == 200
+    body = response.json()
+    versions = [v["version"] for v in body]
+    assert "vlist-1.0" in versions
+    assert "vlist-2.0" in versions
+    vlist1 = next(v for v in body if v["version"] == "vlist-1.0")
+    assert vlist1["size"] == 1
+    assert vlist1["sha256"]
+
+
+def test_firmware_delete_removes_version():
+    client.post("/firmware/upload?version=del-1.0", content=b"data")
+    assert client.get("/firmware/download/del-1.0").status_code == 200
+    response = client.delete("/firmware/del-1.0")
+    assert response.status_code == 204
+    assert client.get("/firmware/download/del-1.0").status_code == 404
+
+
+def test_firmware_delete_404_for_unknown():
+    assert client.delete("/firmware/never-existed").status_code == 404
