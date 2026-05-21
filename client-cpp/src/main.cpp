@@ -3,6 +3,7 @@
 #include "metrics.hpp"
 #include "backend_client.hpp"
 #include "firmware_client.hpp"
+#include "firmware_updater.hpp"
 #include "retry_policy.hpp"
 #include "health_checker.hpp"
 #include "mqtt_client.hpp"
@@ -86,11 +87,13 @@ int main(int argc, char* argv[])
     const std::string current_version = "0.1.0";
     FirmwareClient firmware(cfg.backend_url);
     firmware.report(sensor.id, sensor.api_key, current_version, __DATE__);
-    auto check = firmware.check(current_version);
-    if (check.update_available)
-        Logger::instance().info("firmware update available: " + check.latest + " (current: " + current_version + ")");
-    else
-        Logger::instance().info("firmware up to date: " + current_version);
+
+    FirmwareUpdater updater(firmware);
+    auto upd = updater.run_once(current_version);
+    if (upd.verified)
+        Logger::instance().info("ready to flash: " + upd.path);
+    else if (!upd.error.empty())
+        Logger::instance().warn("firmware update skipped: " + upd.error);
 
     // Random temperature
     std::random_device rd;
