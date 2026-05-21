@@ -608,3 +608,23 @@ def test_firmware_upload_rejects_empty():
 
 def test_firmware_download_404_for_unknown():
     assert client.get("/firmware/download/nope-9.9.9").status_code == 404
+
+
+def test_firmware_upload_returns_sha256():
+    payload = b"checksum test payload"
+    response = client.post("/firmware/upload?version=cs-1.0", content=payload)
+    assert response.status_code == 200
+    body = response.json()
+    import hashlib
+    expected = hashlib.sha256(payload).hexdigest()
+    assert body["sha256"] == expected
+
+
+def test_firmware_download_has_sha256_header():
+    payload = b"header check payload"
+    client.post("/firmware/upload?version=cs-2.0", content=payload)
+    response = client.get("/firmware/download/cs-2.0")
+    assert response.status_code == 200
+    import hashlib
+    expected = hashlib.sha256(payload).hexdigest()
+    assert response.headers.get("x-sha256") == expected
