@@ -642,3 +642,15 @@ def test_firmware_versions_lists_uploads():
     vlist1 = next(v for v in body if v["version"] == "vlist-1.0")
     assert vlist1["size"] == 1
     assert vlist1["sha256"]
+
+
+def test_firmware_delete_removes_version():
+    client.post("/firmware/upload?version=del-1.0", content=b"data")
+    assert client.get("/firmware/download/del-1.0").status_code == 200
+    response = client.delete("/firmware/del-1.0")
+    assert response.status_code == 204
+    assert client.get("/firmware/download/del-1.0").status_code == 404
+
+
+def test_firmware_delete_404_for_unknown():
+    assert client.delete("/firmware/never-existed").status_code == 404

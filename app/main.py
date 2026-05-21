@@ -218,6 +218,19 @@ def list_firmware_versions():
     return out
 
 
+@app.delete("/firmware/{version}", status_code=204)
+def delete_firmware_version(version: str):
+    """Remove an uploaded firmware binary and its checksum."""
+    path = os.path.join(FIRMWARE_DIR, f"{version}.bin")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="firmware not found")
+    os.remove(path)
+    sha_path = path + ".sha256"
+    if os.path.exists(sha_path):
+        os.remove(sha_path)
+    return None
+
+
 @app.post("/firmware/upload")
 async def upload_firmware(version: str, request: Request):
     """Upload a firmware binary. Body is the raw file."""
