@@ -23,7 +23,11 @@ public:
     FirmwareCheckResult check(const std::string& current_version);
 
     /// Download firmware binary to a local path. Returns true on success.
-    bool download(const std::string& version, const std::string& out_path);
+    /// On success, expected_sha is filled with the server-reported sha256 (if any).
+    bool download(const std::string& version, const std::string& out_path, std::string& expected_sha);
+
+    /// Compute sha256 of a file. Returns hex string, empty on error.
+    static std::string sha256_of_file(const std::string& path);
 
 private:
     std::string backend_url_;
