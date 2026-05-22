@@ -6,7 +6,7 @@ import hashlib
 import os
 import secrets
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlmodel import Session, select
@@ -371,6 +371,20 @@ def remove_sensor_tag(
         raise HTTPException(status_code=401, detail="invalid api key")
     tag_registry.remove_tag(sensor_id, key)
     return None
+
+
+@app.get("/tags/search")
+def search_by_tag(key: str, value: Optional[str] = None):
+    """Find sensor ids that have a given tag (and optional value)."""
+    if not key:
+        raise HTTPException(status_code=400, detail="key required")
+    return {"key": key, "value": value, "sensor_ids": tag_registry.find_by_tag(key, value)}
+
+
+@app.get("/groups")
+def list_groups():
+    """List all fleet groups (sensors tagged with key='group')."""
+    return tag_registry.get_groups()
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
