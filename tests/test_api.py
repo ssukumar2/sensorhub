@@ -728,3 +728,42 @@ def test_alert_triggers_on_low_value():
 
 def test_alert_history_bad_limit():
     assert client.get("/alerts/history?limit=0").status_code == 400
+
+
+def test_command_enqueue_and_poll():
+    reg = client.post("/sensors", json={"name": "cmd-flow", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/commands?type=reboot")
+    assert response.status_code == 200
+    cmd_id = response.json()["id"]
+    pending = client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]}).json()
+    assert any(c["id"] == cmd_id and c["type"] == "reboot" for c in pending)
+
+
+def test_command_poll_marks_delivered():
+    reg = client.post("/sensors", json={"name": "cmd-deliver", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/commands?type=ping")
+    client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]})
+    pending2 = client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]}).json()
+    assert pending2 == []
+
+
+def test_command_ack():
+    reg = client.post("/sensors", json={"name": "cmd-ack", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/commands?type=ping")
+    cmd_id = response.json()["id"]
+    client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]})
+    ack = client.post(f"/commands/{cmd_id}/ack?result=pong", headers={"x-api-key": reg["api_key"]})
+    assert ack.status_code == 200
+    history = client.get(f"/sensors/{reg['id']}/commands/history").json()
+    matched = [c for c in history if c["id"] == cmd_id]
+    assert matched and matched[0]["status"] == "acked" and matched[0]["result"] == "pong"
+
+
+def test_command_poll_requires_api_key():
+    reg = client.post("/sensors", json={"name": "cmd-noauth", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": "wrong"})
+    assert response.status_code == 401
+
+
+def test_command_ack_unknown_id():
+    assert client.post("/commands/no-such-id/ack", headers={"x-api-key": "x"}).status_code == 404
