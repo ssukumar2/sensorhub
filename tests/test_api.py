@@ -767,3 +767,20 @@ def test_command_poll_requires_api_key():
 
 def test_command_ack_unknown_id():
     assert client.post("/commands/no-such-id/ack", headers={"x-api-key": "x"}).status_code == 404
+
+
+def test_audit_records_command_enqueue():
+    reg = client.post("/sensors", json={"name": "audit-cmd", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/commands?type=reboot")
+    entries = client.get("/audit/recent?limit=20").json()
+    assert any(e["action"] == "command.enqueue" and e["target"] == f"sensor:{reg['id']}" for e in entries)
+
+
+def test_audit_records_firmware_upload():
+    client.post("/firmware/upload?version=audit-fw-1.0", content=b"x")
+    entries = client.get("/audit/recent?limit=20").json()
+    assert any(e["action"] == "firmware.upload" for e in entries)
+
+
+def test_audit_bad_limit():
+    assert client.get("/audit/recent?limit=0").status_code == 400
