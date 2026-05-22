@@ -21,6 +21,7 @@ from app.models import (
 from app.security.dependencies import require_signed_sensor
 from app.firmware import tracker as firmware_tracker
 from app.tags import registry as tag_registry
+from app.alerts import engine as alert_engine, AlertRule
 
 FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
 os.makedirs(FIRMWARE_DIR, exist_ok=True)
@@ -385,6 +386,33 @@ def search_by_tag(key: str, value: Optional[str] = None):
 def list_groups():
     """List all fleet groups (sensors tagged with key='group')."""
     return tag_registry.get_groups()
+
+
+@app.post("/alerts/rules")
+def add_alert_rule(
+    sensor_id: int,
+    metric: str = "value",
+    threshold_high: Optional[float] = None,
+    threshold_low: Optional[float] = None,
+    session: Session = Depends(get_session),
+):
+    """Configure a threshold rule for a sensor (admin)."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if threshold_high is None and threshold_low is None:
+        raise HTTPException(status_code=400, detail="at least one threshold required")
+    rule = AlertRule(sensor_id=sensor_id, metric=metric,
+                     threshold_high=threshold_high, threshold_low=threshold_low)
+    alert_engine.add_rule(rule)
+    return {"sensor_id": sensor_id, "high": threshold_high, "low": threshold_low}
+
+
+@app.get("/alerts/history")
+def get_alert_history(limit: int = 50):
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    return alert_engine.get_history(limit)
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
