@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.security.dependencies import require_signed_sensor
 from app.firmware import tracker as firmware_tracker
+from app.tags import registry as tag_registry
 
 FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
 os.makedirs(FIRMWARE_DIR, exist_ok=True)
@@ -326,6 +327,50 @@ def list_firmware_devices():
 def firmware_summary():
     """Return aggregate firmware version counts."""
     return firmware_tracker.summary()
+
+
+@app.post("/sensors/{sensor_id}/tags")
+def add_sensor_tag(
+    sensor_id: int,
+    key: str,
+    value: str,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Add or update a key/value tag on a sensor."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    if not key or not value:
+        raise HTTPException(status_code=400, detail="key and value required")
+    tag_registry.add_tag(sensor_id, key, value)
+    return {"sensor_id": sensor_id, "tags": [{"key": t.key, "value": t.value} for t in tag_registry.get_tags(sensor_id)]}
+
+
+@app.get("/sensors/{sensor_id}/tags")
+def list_sensor_tags(sensor_id: int, session: Session = Depends(get_session)):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    return [{"key": t.key, "value": t.value} for t in tag_registry.get_tags(sensor_id)]
+
+
+@app.delete("/sensors/{sensor_id}/tags/{key}", status_code=204)
+def remove_sensor_tag(
+    sensor_id: int,
+    key: str,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    tag_registry.remove_tag(sensor_id, key)
+    return None
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
