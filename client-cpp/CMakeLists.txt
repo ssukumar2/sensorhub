@@ -34,6 +34,7 @@ add_executable(sensor_client
     src/main.cpp
     src/config.cpp
     src/firmware_client.cpp
+    src/command_client.cpp
     src/backend_client.cpp
     src/mqtt_client.cpp
     src/hmac_signer.cpp
