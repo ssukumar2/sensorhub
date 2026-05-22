@@ -654,3 +654,156 @@ def test_firmware_delete_removes_version():
 
 def test_firmware_delete_404_for_unknown():
     assert client.delete("/firmware/never-existed").status_code == 404
+
+
+def test_sensor_tag_add_and_list():
+    reg = client.post("/sensors", json={"name": "tag-add", "location": "lab"}).json()
+    response = client.post(
+        f"/sensors/{reg['id']}/tags?key=group&value=fleet-a",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    tags = client.get(f"/sensors/{reg['id']}/tags").json()
+    assert any(t["key"] == "group" and t["value"] == "fleet-a" for t in tags)
+
+
+def test_sensor_tag_requires_api_key():
+    reg = client.post("/sensors", json={"name": "tag-noauth", "location": "lab"}).json()
+    response = client.post(
+        f"/sensors/{reg['id']}/tags?key=group&value=x",
+        headers={"x-api-key": "wrong"},
+    )
+    assert response.status_code == 401
+
+
+def test_sensor_tag_remove():
+    reg = client.post("/sensors", json={"name": "tag-rm", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=zone&value=z1", headers={"x-api-key": reg["api_key"]})
+    response = client.delete(f"/sensors/{reg['id']}/tags/zone", headers={"x-api-key": reg["api_key"]})
+    assert response.status_code == 204
+    tags = client.get(f"/sensors/{reg['id']}/tags").json()
+    assert not any(t["key"] == "zone" for t in tags)
+
+
+def test_tag_search_finds_sensors():
+    reg = client.post("/sensors", json={"name": "search-tag", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=role&value=critical", headers={"x-api-key": reg["api_key"]})
+    response = client.get("/tags/search?key=role&value=critical")
+    assert response.status_code == 200
+    assert reg["id"] in response.json()["sensor_ids"]
+
+
+def test_groups_lists_fleets():
+    reg = client.post("/sensors", json={"name": "grp-a", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=group&value=alpha", headers={"x-api-key": reg["api_key"]})
+    response = client.get("/groups")
+    assert response.status_code == 200
+    body = response.json()
+    assert "alpha" in body
+
+
+def test_alert_rule_rejects_no_thresholds():
+    reg = client.post("/sensors", json={"name": "alert-empty", "location": "lab"}).json()
+    response = client.post(f"/alerts/rules?sensor_id={reg['id']}")
+    assert response.status_code == 400
+
+
+def test_alert_triggers_on_high_value():
+    reg = client.post("/sensors", json={"name": "alert-high", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_high=50")
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 99.0, "unit": "celsius"}, reg["api_key"])
+    history = client.get("/alerts/history?limit=20").json()
+    matched = [a for a in history if a["sensor_id"] == reg["id"] and a["type"] == "high"]
+    assert matched
+
+
+def test_alert_triggers_on_low_value():
+    reg = client.post("/sensors", json={"name": "alert-low", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_low=10")
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    history = client.get("/alerts/history?limit=20").json()
+    matched = [a for a in history if a["sensor_id"] == reg["id"] and a["type"] == "low"]
+    assert matched
+
+
+def test_alert_history_bad_limit():
+    assert client.get("/alerts/history?limit=0").status_code == 400
+
+
+def test_command_enqueue_and_poll():
+    reg = client.post("/sensors", json={"name": "cmd-flow", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/commands?type=reboot")
+    assert response.status_code == 200
+    cmd_id = response.json()["id"]
+    pending = client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]}).json()
+    assert any(c["id"] == cmd_id and c["type"] == "reboot" for c in pending)
+
+
+def test_command_poll_marks_delivered():
+    reg = client.post("/sensors", json={"name": "cmd-deliver", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/commands?type=ping")
+    client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]})
+    pending2 = client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]}).json()
+    assert pending2 == []
+
+
+def test_command_ack():
+    reg = client.post("/sensors", json={"name": "cmd-ack", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/commands?type=ping")
+    cmd_id = response.json()["id"]
+    client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]})
+    ack = client.post(f"/commands/{cmd_id}/ack?result=pong", headers={"x-api-key": reg["api_key"]})
+    assert ack.status_code == 200
+    history = client.get(f"/sensors/{reg['id']}/commands/history").json()
+    matched = [c for c in history if c["id"] == cmd_id]
+    assert matched and matched[0]["status"] == "acked" and matched[0]["result"] == "pong"
+
+
+def test_command_poll_requires_api_key():
+    reg = client.post("/sensors", json={"name": "cmd-noauth", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": "wrong"})
+    assert response.status_code == 401
+
+
+def test_command_ack_unknown_id():
+    assert client.post("/commands/no-such-id/ack", headers={"x-api-key": "x"}).status_code == 404
+
+
+def test_audit_records_command_enqueue():
+    reg = client.post("/sensors", json={"name": "audit-cmd", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/commands?type=reboot")
+    entries = client.get("/audit/recent?limit=20").json()
+    assert any(e["action"] == "command.enqueue" and e["target"] == f"sensor:{reg['id']}" for e in entries)
+
+
+def test_audit_records_firmware_upload():
+    client.post("/firmware/upload?version=audit-fw-1.0", content=b"x")
+    entries = client.get("/audit/recent?limit=20").json()
+    assert any(e["action"] == "firmware.upload" for e in entries)
+
+
+def test_audit_bad_limit():
+    assert client.get("/audit/recent?limit=0").status_code == 400
+
+
+def test_firmware_rollout_to_group():
+    s1 = client.post("/sensors", json={"name": "roll-1", "location": "lab"}).json()
+    s2 = client.post("/sensors", json={"name": "roll-2", "location": "lab"}).json()
+    client.post(f"/sensors/{s1['id']}/tags?key=group&value=rollout-test", headers={"x-api-key": s1["api_key"]})
+    client.post(f"/sensors/{s2['id']}/tags?key=group&value=rollout-test", headers={"x-api-key": s2["api_key"]})
+    response = client.post("/firmware/rollout?group=rollout-test&version=9.9.9")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["targets"]) == 2
+    for t in body["targets"]:
+        pending = client.get(f"/sensors/{t['sensor_id']}/commands/pending",
+                             headers={"x-api-key": (s1 if t['sensor_id'] == s1['id'] else s2)["api_key"]}).json()
+        assert any(c["type"] == "ota-update" and c["payload"]["version"] == "9.9.9" for c in pending)
+
+
+def test_firmware_rollout_unknown_group():
+    assert client.post("/firmware/rollout?group=no-such-group&version=1.0").status_code == 404
+
+
+def test_firmware_rollout_validates():
+    assert client.post("/firmware/rollout?group=&version=1.0").status_code == 400

@@ -1,14 +1,17 @@
 """Sensor tagging and grouping for fleet management."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
 
 @dataclass
 class SensorTag:
     key: str
     value: str
 
+
 class TagRegistry:
     def __init__(self):
-        self._tags: dict[int, list[SensorTag]] = {}
+        self._tags: Dict[int, List[SensorTag]] = {}
 
     def add_tag(self, sensor_id: int, key: str, value: str):
         if sensor_id not in self._tags:
@@ -23,10 +26,10 @@ class TagRegistry:
         if sensor_id in self._tags:
             self._tags[sensor_id] = [t for t in self._tags[sensor_id] if t.key != key]
 
-    def get_tags(self, sensor_id: int) -> list[SensorTag]:
+    def get_tags(self, sensor_id: int) -> List[SensorTag]:
         return self._tags.get(sensor_id, [])
 
-    def find_by_tag(self, key: str, value: str = None) -> list[int]:
+    def find_by_tag(self, key: str, value: Optional[str] = None) -> List[int]:
         results = []
         for sid, tags in self._tags.items():
             for t in tags:
@@ -35,8 +38,8 @@ class TagRegistry:
                     break
         return results
 
-    def get_groups(self) -> dict[str, list[int]]:
-        groups: dict[str, list[int]] = {}
+    def get_groups(self) -> Dict[str, List[int]]:
+        groups: Dict[str, List[int]] = {}
         for sid, tags in self._tags.items():
             for t in tags:
                 if t.key == "group":
@@ -44,5 +47,6 @@ class TagRegistry:
                         groups[t.value] = []
                     groups[t.value].append(sid)
         return groups
+
 
 registry = TagRegistry()

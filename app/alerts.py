@@ -1,26 +1,29 @@
 """Simple threshold-based alerting for sensor readings."""
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import List, Optional
 
 log = logging.getLogger("sensorhub.alerts")
+
 
 @dataclass
 class AlertRule:
     sensor_id: int
     metric: str
-    threshold_high: float = None
-    threshold_low: float = None
+    threshold_high: Optional[float] = None
+    threshold_low: Optional[float] = None
     triggered: bool = False
+
 
 class AlertEngine:
     def __init__(self):
-        self.rules: list[AlertRule] = []
-        self.history: list[dict] = []
+        self.rules: List[AlertRule] = []
+        self.history: List[dict] = []
 
     def add_rule(self, rule: AlertRule):
         self.rules.append(rule)
 
-    def evaluate(self, sensor_id: int, value: float, unit: str) -> list[dict]:
+    def evaluate(self, sensor_id: int, value: float, unit: str) -> List[dict]:
         alerts = []
         for rule in self.rules:
             if rule.sensor_id != sensor_id:
@@ -41,7 +44,8 @@ class AlertEngine:
                             sensor_id, value, rule.threshold_low)
         return alerts
 
-    def get_history(self, limit: int = 50) -> list[dict]:
+    def get_history(self, limit: int = 50) -> List[dict]:
         return self.history[-limit:]
+
 
 engine = AlertEngine()

@@ -6,7 +6,7 @@ import hashlib
 import os
 import secrets
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from sqlmodel import Session, select
@@ -20,6 +20,10 @@ from app.models import (
 )
 from app.security.dependencies import require_signed_sensor
 from app.firmware import tracker as firmware_tracker
+from app.tags import registry as tag_registry
+from app.alerts import engine as alert_engine, AlertRule
+from app.commands import queue as command_queue
+from app.audit import log as audit_log
 
 FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
 os.makedirs(FIRMWARE_DIR, exist_ok=True)
@@ -246,6 +250,7 @@ async def upload_firmware(version: str, request: Request):
     with open(path + ".sha256", "w") as f:
         f.write(sha)
     firmware_tracker.set_latest(version, f"/firmware/download/{version}")
+    audit_log.record("firmware.upload", f"version:{version}", {"size": len(body), "sha256": sha})
     return {"version": version, "size": len(body), "sha256": sha, "path": path}
 
 
@@ -328,6 +333,189 @@ def firmware_summary():
     return firmware_tracker.summary()
 
 
+@app.post("/sensors/{sensor_id}/tags")
+def add_sensor_tag(
+    sensor_id: int,
+    key: str,
+    value: str,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Add or update a key/value tag on a sensor."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    if not key or not value:
+        raise HTTPException(status_code=400, detail="key and value required")
+    tag_registry.add_tag(sensor_id, key, value)
+    return {"sensor_id": sensor_id, "tags": [{"key": t.key, "value": t.value} for t in tag_registry.get_tags(sensor_id)]}
+
+
+@app.get("/sensors/{sensor_id}/tags")
+def list_sensor_tags(sensor_id: int, session: Session = Depends(get_session)):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    return [{"key": t.key, "value": t.value} for t in tag_registry.get_tags(sensor_id)]
+
+
+@app.delete("/sensors/{sensor_id}/tags/{key}", status_code=204)
+def remove_sensor_tag(
+    sensor_id: int,
+    key: str,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    tag_registry.remove_tag(sensor_id, key)
+    return None
+
+
+@app.get("/tags/search")
+def search_by_tag(key: str, value: Optional[str] = None):
+    """Find sensor ids that have a given tag (and optional value)."""
+    if not key:
+        raise HTTPException(status_code=400, detail="key required")
+    return {"key": key, "value": value, "sensor_ids": tag_registry.find_by_tag(key, value)}
+
+
+@app.get("/groups")
+def list_groups():
+    """List all fleet groups (sensors tagged with key='group')."""
+    return tag_registry.get_groups()
+
+
+@app.post("/alerts/rules")
+def add_alert_rule(
+    sensor_id: int,
+    metric: str = "value",
+    threshold_high: Optional[float] = None,
+    threshold_low: Optional[float] = None,
+    session: Session = Depends(get_session),
+):
+    """Configure a threshold rule for a sensor (admin)."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if threshold_high is None and threshold_low is None:
+        raise HTTPException(status_code=400, detail="at least one threshold required")
+    rule = AlertRule(sensor_id=sensor_id, metric=metric,
+                     threshold_high=threshold_high, threshold_low=threshold_low)
+    audit_log.record("alert.rule.add", f"sensor:{sensor_id}", {"high": threshold_high, "low": threshold_low})
+    alert_engine.add_rule(rule)
+    return {"sensor_id": sensor_id, "high": threshold_high, "low": threshold_low}
+
+
+@app.get("/alerts/history")
+def get_alert_history(limit: int = 50):
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    return alert_engine.get_history(limit)
+
+
+@app.post("/sensors/{sensor_id}/commands")
+def enqueue_command(
+    sensor_id: int,
+    type: str,
+    payload: Optional[dict] = None,
+    session: Session = Depends(get_session),
+):
+    """Hub admin queues a command for a device (e.g. reboot, set-interval, ota)."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not type:
+        raise HTTPException(status_code=400, detail="command type required")
+    audit_log.record("command.enqueue", f"sensor:{sensor_id}", {"type": type, "payload": payload})
+    cmd = command_queue.enqueue(sensor_id, type, payload or {})
+    return {"id": cmd.id, "type": cmd.type, "status": cmd.status}
+
+
+@app.get("/sensors/{sensor_id}/commands/pending")
+def poll_commands(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Device polls for pending commands. Auto-marks them delivered."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    pending = command_queue.pending_for(sensor_id)
+    out = []
+    for c in pending:
+        out.append({"id": c.id, "type": c.type, "payload": c.payload})
+        command_queue.mark_delivered(c.id)
+    return out
+
+
+@app.post("/commands/{cmd_id}/ack")
+def ack_command(
+    cmd_id: str,
+    result: str = "",
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Device acks a command with optional result string."""
+    cmd = command_queue.get(cmd_id)
+    if cmd is None:
+        raise HTTPException(status_code=404, detail="command not found")
+    sensor = session.get(Sensor, cmd.sensor_id)
+    if sensor is None or not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    command_queue.ack(cmd_id, result)
+    return {"id": cmd_id, "status": "acked"}
+
+
+@app.get("/sensors/{sensor_id}/commands/history")
+def command_history(sensor_id: int, session: Session = Depends(get_session)):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    cmds = command_queue.all_for(sensor_id)
+    return [
+        {"id": c.id, "type": c.type, "status": c.status, "payload": c.payload,
+         "created_at": c.created_at.isoformat(),
+         "delivered_at": c.delivered_at.isoformat() if c.delivered_at else None,
+         "acked_at": c.acked_at.isoformat() if c.acked_at else None,
+         "result": c.result}
+        for c in cmds
+    ]
+
+
+@app.get("/audit/recent")
+def get_audit_log(limit: int = 50):
+    """Recent audit log entries, newest first."""
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    return audit_log.recent(limit)
+
+
+@app.post("/firmware/rollout")
+def firmware_rollout(group: str, version: str):
+    """Enqueue an ota-update command to every sensor tagged group=<name>."""
+    if not group or not version:
+        raise HTTPException(status_code=400, detail="group and version required")
+    groups = tag_registry.get_groups()
+    if group not in groups:
+        raise HTTPException(status_code=404, detail=f"group '{group}' not found")
+    targets = groups[group]
+    out = []
+    for sid in targets:
+        cmd = command_queue.enqueue(sid, "ota-update", {"version": version})
+        out.append({"sensor_id": sid, "command_id": cmd.id})
+    audit_log.record("firmware.rollout", f"group:{group}", {"version": version, "count": len(out)})
+    return {"group": group, "version": version, "targets": out}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
@@ -355,6 +543,7 @@ def submit_reading(
     session.add(reading)
     session.commit()
     session.refresh(reading)
+    alert_engine.evaluate(payload.sensor_id, payload.value, payload.unit)
     return reading
 
 
