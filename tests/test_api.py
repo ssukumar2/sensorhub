@@ -700,3 +700,31 @@ def test_groups_lists_fleets():
     assert response.status_code == 200
     body = response.json()
     assert "alpha" in body
+
+
+def test_alert_rule_rejects_no_thresholds():
+    reg = client.post("/sensors", json={"name": "alert-empty", "location": "lab"}).json()
+    response = client.post(f"/alerts/rules?sensor_id={reg['id']}")
+    assert response.status_code == 400
+
+
+def test_alert_triggers_on_high_value():
+    reg = client.post("/sensors", json={"name": "alert-high", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_high=50")
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 99.0, "unit": "celsius"}, reg["api_key"])
+    history = client.get("/alerts/history?limit=20").json()
+    matched = [a for a in history if a["sensor_id"] == reg["id"] and a["type"] == "high"]
+    assert matched
+
+
+def test_alert_triggers_on_low_value():
+    reg = client.post("/sensors", json={"name": "alert-low", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_low=10")
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    history = client.get("/alerts/history?limit=20").json()
+    matched = [a for a in history if a["sensor_id"] == reg["id"] and a["type"] == "low"]
+    assert matched
+
+
+def test_alert_history_bad_limit():
+    assert client.get("/alerts/history?limit=0").status_code == 400
