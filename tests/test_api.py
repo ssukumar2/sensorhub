@@ -654,3 +654,49 @@ def test_firmware_delete_removes_version():
 
 def test_firmware_delete_404_for_unknown():
     assert client.delete("/firmware/never-existed").status_code == 404
+
+
+def test_sensor_tag_add_and_list():
+    reg = client.post("/sensors", json={"name": "tag-add", "location": "lab"}).json()
+    response = client.post(
+        f"/sensors/{reg['id']}/tags?key=group&value=fleet-a",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    tags = client.get(f"/sensors/{reg['id']}/tags").json()
+    assert any(t["key"] == "group" and t["value"] == "fleet-a" for t in tags)
+
+
+def test_sensor_tag_requires_api_key():
+    reg = client.post("/sensors", json={"name": "tag-noauth", "location": "lab"}).json()
+    response = client.post(
+        f"/sensors/{reg['id']}/tags?key=group&value=x",
+        headers={"x-api-key": "wrong"},
+    )
+    assert response.status_code == 401
+
+
+def test_sensor_tag_remove():
+    reg = client.post("/sensors", json={"name": "tag-rm", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=zone&value=z1", headers={"x-api-key": reg["api_key"]})
+    response = client.delete(f"/sensors/{reg['id']}/tags/zone", headers={"x-api-key": reg["api_key"]})
+    assert response.status_code == 204
+    tags = client.get(f"/sensors/{reg['id']}/tags").json()
+    assert not any(t["key"] == "zone" for t in tags)
+
+
+def test_tag_search_finds_sensors():
+    reg = client.post("/sensors", json={"name": "search-tag", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=role&value=critical", headers={"x-api-key": reg["api_key"]})
+    response = client.get("/tags/search?key=role&value=critical")
+    assert response.status_code == 200
+    assert reg["id"] in response.json()["sensor_ids"]
+
+
+def test_groups_lists_fleets():
+    reg = client.post("/sensors", json={"name": "grp-a", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=group&value=alpha", headers={"x-api-key": reg["api_key"]})
+    response = client.get("/groups")
+    assert response.status_code == 200
+    body = response.json()
+    assert "alpha" in body
