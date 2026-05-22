@@ -4,6 +4,7 @@
 #include "backend_client.hpp"
 #include "firmware_client.hpp"
 #include "firmware_updater.hpp"
+#include "command_client.hpp"
 #include "retry_policy.hpp"
 #include "health_checker.hpp"
 #include "mqtt_client.hpp"
@@ -102,6 +103,8 @@ int main(int argc, char* argv[])
     int count = 0;
     const int interval = cfg.interval_seconds;
 
+    CommandClient commands(cfg.backend_url);
+
     if (cfg.mode == "mqtt") 
     {
         MqttClient mqtt(cfg.mqtt_url, "sensorhub-cpp-client");
@@ -174,9 +177,18 @@ int main(int argc, char* argv[])
     else 
     {
         Logger::instance().info("http mode, starting loop");
+        auto poll_and_handle = [&]() {
+            auto pending = commands.poll(sensor.id, sensor.api_key);
+            for (const auto& c : pending)
+            {
+                Logger::instance().info("command received: " + c.type + " (id=" + c.id + ")");
+                commands.ack(c.id, sensor.api_key, "received");
+            }
+        };
         while (keep_running) 
         {
             double t = temp_dist(gen);
+            poll_and_handle();
             RetryPolicy retry(3, 200, 2000);
             bool ok = retry.run([&]() { return http.submit_reading(sensor, t, "celsius"); });
             if (ok) 
