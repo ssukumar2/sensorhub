@@ -784,3 +784,26 @@ def test_audit_records_firmware_upload():
 
 def test_audit_bad_limit():
     assert client.get("/audit/recent?limit=0").status_code == 400
+
+
+def test_firmware_rollout_to_group():
+    s1 = client.post("/sensors", json={"name": "roll-1", "location": "lab"}).json()
+    s2 = client.post("/sensors", json={"name": "roll-2", "location": "lab"}).json()
+    client.post(f"/sensors/{s1['id']}/tags?key=group&value=rollout-test", headers={"x-api-key": s1["api_key"]})
+    client.post(f"/sensors/{s2['id']}/tags?key=group&value=rollout-test", headers={"x-api-key": s2["api_key"]})
+    response = client.post("/firmware/rollout?group=rollout-test&version=9.9.9")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["targets"]) == 2
+    for t in body["targets"]:
+        pending = client.get(f"/sensors/{t['sensor_id']}/commands/pending",
+                             headers={"x-api-key": (s1 if t['sensor_id'] == s1['id'] else s2)["api_key"]}).json()
+        assert any(c["type"] == "ota-update" and c["payload"]["version"] == "9.9.9" for c in pending)
+
+
+def test_firmware_rollout_unknown_group():
+    assert client.post("/firmware/rollout?group=no-such-group&version=1.0").status_code == 404
+
+
+def test_firmware_rollout_validates():
+    assert client.post("/firmware/rollout?group=&version=1.0").status_code == 400

@@ -499,6 +499,23 @@ def get_audit_log(limit: int = 50):
     return audit_log.recent(limit)
 
 
+@app.post("/firmware/rollout")
+def firmware_rollout(group: str, version: str):
+    """Enqueue an ota-update command to every sensor tagged group=<name>."""
+    if not group or not version:
+        raise HTTPException(status_code=400, detail="group and version required")
+    groups = tag_registry.get_groups()
+    if group not in groups:
+        raise HTTPException(status_code=404, detail=f"group '{group}' not found")
+    targets = groups[group]
+    out = []
+    for sid in targets:
+        cmd = command_queue.enqueue(sid, "ota-update", {"version": version})
+        out.append({"sensor_id": sid, "command_id": cmd.id})
+    audit_log.record("firmware.rollout", f"group:{group}", {"version": version, "count": len(out)})
+    return {"group": group, "version": version, "targets": out}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
