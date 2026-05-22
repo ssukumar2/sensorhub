@@ -442,6 +442,7 @@ def submit_reading(
     session.add(reading)
     session.commit()
     session.refresh(reading)
+    alert_engine.evaluate(payload.sensor_id, payload.value, payload.unit)
     return reading
 
 
