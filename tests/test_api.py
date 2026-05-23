@@ -844,3 +844,21 @@ def test_active_alerts_lists_recent():
     matched = [a for a in body if a["sensor_id"] == reg["id"]]
     assert matched
     assert "timestamp" in matched[0]
+
+
+def test_fleet_summary_shape():
+    response = client.get("/fleet/summary")
+    assert response.status_code == 200
+    body = response.json()
+    for key in ("sensors", "readings", "groups", "group_names", "active_alerts", "firmware_latest"):
+        assert key in body
+    assert isinstance(body["sensors"], int)
+    assert isinstance(body["readings"], int)
+    assert isinstance(body["group_names"], list)
+
+
+def test_fleet_summary_reflects_state():
+    before = client.get("/fleet/summary").json()
+    client.post("/sensors", json={"name": "fleet-bump", "location": "lab"})
+    after = client.get("/fleet/summary").json()
+    assert after["sensors"] >= before["sensors"] + 1
