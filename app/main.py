@@ -3,6 +3,7 @@ SensorHUb — secure sensor network gateway.
 
 """
 import hashlib
+import asyncio
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -30,6 +31,7 @@ os.makedirs(FIRMWARE_DIR, exist_ok=True)
 from app.middleware import RateLimiter
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 import time as _time
 
@@ -514,6 +516,211 @@ def firmware_rollout(group: str, version: str):
         out.append({"sensor_id": sid, "command_id": cmd.id})
     audit_log.record("firmware.rollout", f"group:{group}", {"version": version, "count": len(out)})
     return {"group": group, "version": version, "targets": out}
+
+
+@app.get("/readings/stream")
+async def stream_readings(session: Session = Depends(get_session)):
+    """Server-sent events stream of new readings."""
+    async def gen():
+        last_id = 0
+        rows = session.exec(select(Reading).order_by(Reading.id.desc()).limit(1)).all()
+        if rows:
+            last_id = rows[0].id
+        while True:
+            new_rows = session.exec(
+                select(Reading, Sensor)
+                .join(Sensor, Sensor.id == Reading.sensor_id)
+                .where(Reading.id > last_id)
+                .order_by(Reading.id)
+            ).all()
+            for r, sensor in new_rows:
+                payload = {
+                    "id": r.id, "sensor_id": r.sensor_id, "sensor_name": sensor.name,
+                    "value": r.value, "unit": r.unit,
+                    "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
+                }
+                import json as _json
+                yield f"data: {_json.dumps(payload)}\n\n"
+                last_id = r.id
+            await asyncio.sleep(1)
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/sensors/{sensor_id}/readings/window")
+def readings_window(
+    sensor_id: int,
+    since: Optional[str] = None,
+    limit: int = 1000,
+    session: Session = Depends(get_session),
+):
+    """Return readings newer than ISO timestamp `since`."""
+    from datetime import datetime as _dt
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if limit < 1 or limit > 5000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 5000")
+    statement = select(Reading).where(Reading.sensor_id == sensor_id)
+    if since:
+        try:
+            cutoff = _dt.fromisoformat(since)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid ISO timestamp")
+        statement = statement.where(Reading.recorded_at > cutoff)
+    statement = statement.order_by(Reading.recorded_at).limit(limit)
+    return session.exec(statement).all()
+
+
+@app.get("/alerts/active")
+def get_active_alerts():
+    """Alerts triggered in the last 5 minutes."""
+    out = []
+    for a in alert_engine.active():
+        a2 = dict(a)
+        if "timestamp" in a2 and hasattr(a2["timestamp"], "isoformat"):
+            a2["timestamp"] = a2["timestamp"].isoformat()
+        out.append(a2)
+    return out
+
+
+@app.get("/fleet/summary")
+def fleet_summary(session: Session = Depends(get_session)):
+    """Single-call dashboard summary."""
+    sensor_count = len(session.exec(select(Sensor)).all())
+    reading_count = len(session.exec(select(Reading)).all())
+    groups = tag_registry.get_groups()
+    active = alert_engine.active()
+    return {
+        "sensors": sensor_count,
+        "readings": reading_count,
+        "groups": len(groups),
+        "group_names": list(groups.keys()),
+        "active_alerts": len(active),
+        "firmware_latest": firmware_tracker.latest().get("version", ""),
+    }
+
+
+@app.get("/sensors/{sensor_id}/aggregate")
+def sensor_aggregate(
+    sensor_id: int,
+    window: int = 100,
+    bucket: int = 10,
+    session: Session = Depends(get_session),
+):
+    """Bucket the last `window` readings into `bucket`-sized chunks with avg/min/max."""
+    if window < 1 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 1 and 5000")
+    if bucket < 1 or bucket > window:
+        raise HTTPException(status_code=400, detail="bucket must be between 1 and window")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    rows = list(reversed(rows))
+    out = []
+    for i in range(0, len(rows), bucket):
+        chunk = rows[i:i+bucket]
+        values = [r.value for r in chunk]
+        out.append({
+            "count": len(values),
+            "avg": round(sum(values)/len(values), 4),
+            "min": min(values),
+            "max": max(values),
+            "from": chunk[0].recorded_at.isoformat() if chunk[0].recorded_at else None,
+            "to": chunk[-1].recorded_at.isoformat() if chunk[-1].recorded_at else None,
+        })
+    return out
+
+
+@app.delete("/alerts/clear", status_code=204)
+def clear_alert_history():
+    """Admin: wipe alert history."""
+    alert_engine.history.clear()
+    audit_log.record("alerts.clear", "history", {})
+    return None
+
+
+@app.get("/alerts/rules")
+def list_alert_rules():
+    """List currently configured alert rules."""
+    return [
+        {"index": i, "sensor_id": r.sensor_id, "metric": r.metric,
+         "threshold_high": r.threshold_high, "threshold_low": r.threshold_low}
+        for i, r in enumerate(alert_engine.rules)
+    ]
+
+
+@app.delete("/alerts/rules/{idx}", status_code=204)
+def delete_alert_rule(idx: int):
+    """Remove rule by index from list."""
+    if idx < 0 or idx >= len(alert_engine.rules):
+        raise HTTPException(status_code=404, detail="rule index out of range")
+    removed = alert_engine.rules.pop(idx)
+    audit_log.record("alert.rule.delete", f"sensor:{removed.sensor_id}", {"index": idx})
+    return None
+
+
+@app.get("/commands/pending/all")
+def list_all_pending_commands():
+    """Admin: every pending command across all sensors."""
+    all_pending = []
+    seen_sensors = set()
+    for sid, cmds in command_queue._queue.items():
+        for c in cmds:
+            if c.status == "pending":
+                all_pending.append({
+                    "id": c.id, "sensor_id": sid, "type": c.type,
+                    "created_at": c.created_at.isoformat(),
+                })
+                seen_sensors.add(sid)
+    return {"count": len(all_pending), "sensors": list(seen_sensors), "commands": all_pending}
+
+
+@app.post("/sensors/bulk", status_code=201)
+def create_bulk_sensors(
+    sensors: List[SensorCreate],
+    session: Session = Depends(get_session),
+):
+    """Create multiple sensors in one call. Caps at 100."""
+    if not sensors:
+        raise HTTPException(status_code=400, detail="empty list")
+    if len(sensors) > 100:
+        raise HTTPException(status_code=400, detail="max 100 sensors per call")
+    created = []
+    for sc in sensors:
+        s = Sensor(name=sc.name, location=sc.location)
+        session.add(s)
+        created.append(s)
+    session.commit()
+    for s in created:
+        session.refresh(s)
+    return {"count": len(created), "sensors": created}
+
+
+@app.get("/health/detail")
+def health_detail(session: Session = Depends(get_session)):
+    """Extended health with db state and last activity."""
+    import os as _os
+    sensor_count = len(session.exec(select(Sensor)).all())
+    reading_count = len(session.exec(select(Reading)).all())
+    last = session.exec(select(Reading).order_by(Reading.id.desc()).limit(1)).all()
+    last_reading_at = last[0].recorded_at.isoformat() if last else None
+    db_size = 0
+    for db_name in ("sensorhub.db", "data.db", "test.db"):
+        if _os.path.exists(db_name):
+            db_size = _os.path.getsize(db_name)
+            break
+    return {
+        "status": "ok",
+        "uptime_seconds": int(_time.time() - _start_time),
+        "sensors": sensor_count,
+        "readings": reading_count,
+        "last_reading_at": last_reading_at,
+        "db_size_bytes": db_size,
+    }
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)

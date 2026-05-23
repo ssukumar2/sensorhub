@@ -23,21 +23,25 @@ class AlertEngine:
     def add_rule(self, rule: AlertRule):
         self.rules.append(rule)
 
+    def active(self) -> List[dict]:
+        """Return alerts in the last 5 minutes."""
+        from datetime import datetime, timedelta
+        cutoff = datetime.utcnow() - timedelta(minutes=5)
+        return [a for a in self.history if a.get("timestamp", datetime.utcnow()) >= cutoff]
+
     def evaluate(self, sensor_id: int, value: float, unit: str) -> List[dict]:
         alerts = []
         for rule in self.rules:
             if rule.sensor_id != sensor_id:
                 continue
             if rule.threshold_high is not None and value > rule.threshold_high:
-                alert = {"sensor_id": sensor_id, "value": value, "unit": unit,
-                         "type": "high", "threshold": rule.threshold_high}
+                from datetime import datetime as _dt; alert = {"sensor_id": sensor_id, "value": value, "unit": unit, "type": "high", "threshold": rule.threshold_high, "timestamp": _dt.utcnow()}
                 alerts.append(alert)
                 self.history.append(alert)
                 log.warning("ALERT sensor=%d value=%.2f exceeds %.2f",
                             sensor_id, value, rule.threshold_high)
             if rule.threshold_low is not None and value < rule.threshold_low:
-                alert = {"sensor_id": sensor_id, "value": value, "unit": unit,
-                         "type": "low", "threshold": rule.threshold_low}
+                from datetime import datetime as _dt; alert = {"sensor_id": sensor_id, "value": value, "unit": unit, "type": "low", "threshold": rule.threshold_low, "timestamp": _dt.utcnow()}
                 alerts.append(alert)
                 self.history.append(alert)
                 log.warning("ALERT sensor=%d value=%.2f below %.2f",

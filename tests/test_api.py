@@ -807,3 +807,139 @@ def test_firmware_rollout_unknown_group():
 
 def test_firmware_rollout_validates():
     assert client.post("/firmware/rollout?group=&version=1.0").status_code == 400
+
+
+def test_readings_window_returns_after_since():
+    reg = client.post("/sensors", json={"name": "win-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    import time as _t
+    _t.sleep(0.05)
+    from datetime import datetime as _dt
+    cutoff = _dt.utcnow().isoformat()
+    _t.sleep(0.05)
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 2.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/readings/window?since={cutoff}")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["value"] == 2.0
+
+
+def test_readings_window_rejects_bad_iso():
+    reg = client.post("/sensors", json={"name": "win-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/readings/window?since=not-a-date").status_code == 400
+
+
+def test_readings_window_unknown_sensor():
+    assert client.get("/sensors/99999/readings/window").status_code == 404
+
+
+def test_active_alerts_lists_recent():
+    reg = client.post("/sensors", json={"name": "active-alert", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_high=10")
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 99.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get("/alerts/active")
+    assert response.status_code == 200
+    body = response.json()
+    matched = [a for a in body if a["sensor_id"] == reg["id"]]
+    assert matched
+    assert "timestamp" in matched[0]
+
+
+def test_fleet_summary_shape():
+    response = client.get("/fleet/summary")
+    assert response.status_code == 200
+    body = response.json()
+    for key in ("sensors", "readings", "groups", "group_names", "active_alerts", "firmware_latest"):
+        assert key in body
+    assert isinstance(body["sensors"], int)
+    assert isinstance(body["readings"], int)
+    assert isinstance(body["group_names"], list)
+
+
+def test_fleet_summary_reflects_state():
+    before = client.get("/fleet/summary").json()
+    client.post("/sensors", json={"name": "fleet-bump", "location": "lab"})
+    after = client.get("/fleet/summary").json()
+    assert after["sensors"] >= before["sensors"] + 1
+
+
+def test_sensor_aggregate_buckets():
+    reg = client.post("/sensors", json={"name": "agg-test", "location": "lab"}).json()
+    for v in (1, 2, 3, 4, 5, 6):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/aggregate?window=6&bucket=3")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 2
+    assert body[0]["count"] == 3
+    assert body[1]["count"] == 3
+
+
+def test_sensor_aggregate_bad_params():
+    reg = client.post("/sensors", json={"name": "agg-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/aggregate?window=0&bucket=1").status_code == 400
+    assert client.get(f"/sensors/{reg['id']}/aggregate?window=10&bucket=100").status_code == 400
+
+
+def test_alerts_clear_empties_history():
+    reg = client.post("/sensors", json={"name": "clr-alert", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_high=1")
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 99.0, "unit": "celsius"}, reg["api_key"])
+    assert len(client.get("/alerts/history").json()) > 0
+    assert client.delete("/alerts/clear").status_code == 204
+    assert client.get("/alerts/history").json() == []
+
+
+def test_alert_rules_list_and_delete():
+    reg = client.post("/sensors", json={"name": "rules-test", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_high=50")
+    rules = client.get("/alerts/rules").json()
+    assert any(r["sensor_id"] == reg["id"] for r in rules)
+    matching = [r for r in rules if r["sensor_id"] == reg["id"]]
+    idx = matching[0]["index"]
+    assert client.delete(f"/alerts/rules/{idx}").status_code == 204
+
+
+def test_alert_rule_delete_bad_index():
+    assert client.delete("/alerts/rules/99999").status_code == 404
+
+
+def test_admin_pending_commands_view():
+    reg = client.post("/sensors", json={"name": "admin-pending", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/commands?type=admin-test-cmd")
+    response = client.get("/commands/pending/all")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] >= 1
+    assert any(c["sensor_id"] == reg["id"] and c["type"] == "admin-test-cmd" for c in body["commands"])
+
+
+def test_sensors_bulk_create():
+    payload = [
+        {"name": "bulk-1", "location": "lab"},
+        {"name": "bulk-2", "location": "lab"},
+        {"name": "bulk-3", "location": "lab"},
+    ]
+    response = client.post("/sensors/bulk", json=payload)
+    assert response.status_code == 201
+    body = response.json()
+    assert body["count"] == 3
+
+
+def test_sensors_bulk_empty():
+    assert client.post("/sensors/bulk", json=[]).status_code == 400
+
+
+def test_sensors_bulk_too_many():
+    payload = [{"name": f"too-{i}", "location": "lab"} for i in range(101)]
+    assert client.post("/sensors/bulk", json=payload).status_code == 400
+
+
+def test_health_detail_shape():
+    response = client.get("/health/detail")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("status", "uptime_seconds", "sensors", "readings", "last_reading_at", "db_size_bytes"):
+        assert k in body
+    assert body["status"] == "ok"
