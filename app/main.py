@@ -663,6 +663,22 @@ def delete_alert_rule(idx: int):
     return None
 
 
+@app.get("/commands/pending/all")
+def list_all_pending_commands():
+    """Admin: every pending command across all sensors."""
+    all_pending = []
+    seen_sensors = set()
+    for sid, cmds in command_queue._queue.items():
+        for c in cmds:
+            if c.status == "pending":
+                all_pending.append({
+                    "id": c.id, "sensor_id": sid, "type": c.type,
+                    "created_at": c.created_at.isoformat(),
+                })
+                seen_sensors.add(sid)
+    return {"count": len(all_pending), "sensors": list(seen_sensors), "commands": all_pending}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

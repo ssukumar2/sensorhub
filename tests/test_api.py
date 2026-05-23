@@ -903,3 +903,13 @@ def test_alert_rules_list_and_delete():
 
 def test_alert_rule_delete_bad_index():
     assert client.delete("/alerts/rules/99999").status_code == 404
+
+
+def test_admin_pending_commands_view():
+    reg = client.post("/sensors", json={"name": "admin-pending", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/commands?type=admin-test-cmd")
+    response = client.get("/commands/pending/all")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] >= 1
+    assert any(c["sensor_id"] == reg["id"] and c["type"] == "admin-test-cmd" for c in body["commands"])
