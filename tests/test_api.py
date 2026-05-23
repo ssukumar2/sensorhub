@@ -807,3 +807,28 @@ def test_firmware_rollout_unknown_group():
 
 def test_firmware_rollout_validates():
     assert client.post("/firmware/rollout?group=&version=1.0").status_code == 400
+
+
+def test_readings_window_returns_after_since():
+    reg = client.post("/sensors", json={"name": "win-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    import time as _t
+    _t.sleep(0.05)
+    from datetime import datetime as _dt
+    cutoff = _dt.utcnow().isoformat()
+    _t.sleep(0.05)
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 2.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/readings/window?since={cutoff}")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["value"] == 2.0
+
+
+def test_readings_window_rejects_bad_iso():
+    reg = client.post("/sensors", json={"name": "win-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/readings/window?since=not-a-date").status_code == 400
+
+
+def test_readings_window_unknown_sensor():
+    assert client.get("/sensors/99999/readings/window").status_code == 404
