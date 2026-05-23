@@ -546,6 +546,31 @@ async def stream_readings(session: Session = Depends(get_session)):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+@app.get("/sensors/{sensor_id}/readings/window")
+def readings_window(
+    sensor_id: int,
+    since: Optional[str] = None,
+    limit: int = 1000,
+    session: Session = Depends(get_session),
+):
+    """Return readings newer than ISO timestamp `since`."""
+    from datetime import datetime as _dt
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if limit < 1 or limit > 5000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 5000")
+    statement = select(Reading).where(Reading.sensor_id == sensor_id)
+    if since:
+        try:
+            cutoff = _dt.fromisoformat(since)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid ISO timestamp")
+        statement = statement.where(Reading.recorded_at > cutoff)
+    statement = statement.order_by(Reading.recorded_at).limit(limit)
+    return session.exec(statement).all()
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
