@@ -583,6 +583,23 @@ def get_active_alerts():
     return out
 
 
+@app.get("/fleet/summary")
+def fleet_summary(session: Session = Depends(get_session)):
+    """Single-call dashboard summary."""
+    sensor_count = len(session.exec(select(Sensor)).all())
+    reading_count = len(session.exec(select(Reading)).all())
+    groups = tag_registry.get_groups()
+    active = alert_engine.active()
+    return {
+        "sensors": sensor_count,
+        "readings": reading_count,
+        "groups": len(groups),
+        "group_names": list(groups.keys()),
+        "active_alerts": len(active),
+        "firmware_latest": firmware_tracker.latest().get("version", ""),
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
