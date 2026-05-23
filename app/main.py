@@ -679,6 +679,27 @@ def list_all_pending_commands():
     return {"count": len(all_pending), "sensors": list(seen_sensors), "commands": all_pending}
 
 
+@app.post("/sensors/bulk", status_code=201)
+def create_bulk_sensors(
+    sensors: List[SensorCreate],
+    session: Session = Depends(get_session),
+):
+    """Create multiple sensors in one call. Caps at 100."""
+    if not sensors:
+        raise HTTPException(status_code=400, detail="empty list")
+    if len(sensors) > 100:
+        raise HTTPException(status_code=400, detail="max 100 sensors per call")
+    created = []
+    for sc in sensors:
+        s = Sensor(name=sc.name, location=sc.location)
+        session.add(s)
+        created.append(s)
+    session.commit()
+    for s in created:
+        session.refresh(s)
+    return {"count": len(created), "sensors": created}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

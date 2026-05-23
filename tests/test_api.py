@@ -913,3 +913,24 @@ def test_admin_pending_commands_view():
     body = response.json()
     assert body["count"] >= 1
     assert any(c["sensor_id"] == reg["id"] and c["type"] == "admin-test-cmd" for c in body["commands"])
+
+
+def test_sensors_bulk_create():
+    payload = [
+        {"name": "bulk-1", "location": "lab"},
+        {"name": "bulk-2", "location": "lab"},
+        {"name": "bulk-3", "location": "lab"},
+    ]
+    response = client.post("/sensors/bulk", json=payload)
+    assert response.status_code == 201
+    body = response.json()
+    assert body["count"] == 3
+
+
+def test_sensors_bulk_empty():
+    assert client.post("/sensors/bulk", json=[]).status_code == 400
+
+
+def test_sensors_bulk_too_many():
+    payload = [{"name": f"too-{i}", "location": "lab"} for i in range(101)]
+    assert client.post("/sensors/bulk", json=payload).status_code == 400
