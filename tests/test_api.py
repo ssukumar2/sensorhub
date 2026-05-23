@@ -832,3 +832,15 @@ def test_readings_window_rejects_bad_iso():
 
 def test_readings_window_unknown_sensor():
     assert client.get("/sensors/99999/readings/window").status_code == 404
+
+
+def test_active_alerts_lists_recent():
+    reg = client.post("/sensors", json={"name": "active-alert", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_high=10")
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 99.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get("/alerts/active")
+    assert response.status_code == 200
+    body = response.json()
+    matched = [a for a in body if a["sensor_id"] == reg["id"]]
+    assert matched
+    assert "timestamp" in matched[0]
