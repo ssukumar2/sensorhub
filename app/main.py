@@ -700,6 +700,29 @@ def create_bulk_sensors(
     return {"count": len(created), "sensors": created}
 
 
+@app.get("/health/detail")
+def health_detail(session: Session = Depends(get_session)):
+    """Extended health with db state and last activity."""
+    import os as _os
+    sensor_count = len(session.exec(select(Sensor)).all())
+    reading_count = len(session.exec(select(Reading)).all())
+    last = session.exec(select(Reading).order_by(Reading.id.desc()).limit(1)).all()
+    last_reading_at = last[0].recorded_at.isoformat() if last else None
+    db_size = 0
+    for db_name in ("sensorhub.db", "data.db", "test.db"):
+        if _os.path.exists(db_name):
+            db_size = _os.path.getsize(db_name)
+            break
+    return {
+        "status": "ok",
+        "uptime_seconds": int(_time.time() - _start_time),
+        "sensors": sensor_count,
+        "readings": reading_count,
+        "last_reading_at": last_reading_at,
+        "db_size_bytes": db_size,
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

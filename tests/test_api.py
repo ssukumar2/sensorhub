@@ -934,3 +934,12 @@ def test_sensors_bulk_empty():
 def test_sensors_bulk_too_many():
     payload = [{"name": f"too-{i}", "location": "lab"} for i in range(101)]
     assert client.post("/sensors/bulk", json=payload).status_code == 400
+
+
+def test_health_detail_shape():
+    response = client.get("/health/detail")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("status", "uptime_seconds", "sensors", "readings", "last_reading_at", "db_size_bytes"):
+        assert k in body
+    assert body["status"] == "ok"
