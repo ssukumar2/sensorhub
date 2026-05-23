@@ -3,6 +3,7 @@ SensorHUb — secure sensor network gateway.
 
 """
 import hashlib
+import asyncio
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -30,6 +31,7 @@ os.makedirs(FIRMWARE_DIR, exist_ok=True)
 from app.middleware import RateLimiter
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 import time as _time
 
@@ -514,6 +516,34 @@ def firmware_rollout(group: str, version: str):
         out.append({"sensor_id": sid, "command_id": cmd.id})
     audit_log.record("firmware.rollout", f"group:{group}", {"version": version, "count": len(out)})
     return {"group": group, "version": version, "targets": out}
+
+
+@app.get("/readings/stream")
+async def stream_readings(session: Session = Depends(get_session)):
+    """Server-sent events stream of new readings."""
+    async def gen():
+        last_id = 0
+        rows = session.exec(select(Reading).order_by(Reading.id.desc()).limit(1)).all()
+        if rows:
+            last_id = rows[0].id
+        while True:
+            new_rows = session.exec(
+                select(Reading, Sensor)
+                .join(Sensor, Sensor.id == Reading.sensor_id)
+                .where(Reading.id > last_id)
+                .order_by(Reading.id)
+            ).all()
+            for r, sensor in new_rows:
+                payload = {
+                    "id": r.id, "sensor_id": r.sensor_id, "sensor_name": sensor.name,
+                    "value": r.value, "unit": r.unit,
+                    "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
+                }
+                import json as _json
+                yield f"data: {_json.dumps(payload)}\n\n"
+                last_id = r.id
+            await asyncio.sleep(1)
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
