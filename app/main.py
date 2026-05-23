@@ -571,6 +571,18 @@ def readings_window(
     return session.exec(statement).all()
 
 
+@app.get("/alerts/active")
+def get_active_alerts():
+    """Alerts triggered in the last 5 minutes."""
+    out = []
+    for a in alert_engine.active():
+        a2 = dict(a)
+        if "timestamp" in a2 and hasattr(a2["timestamp"], "isoformat"):
+            a2["timestamp"] = a2["timestamp"].isoformat()
+        out.append(a2)
+    return out
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
