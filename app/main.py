@@ -643,6 +643,26 @@ def clear_alert_history():
     return None
 
 
+@app.get("/alerts/rules")
+def list_alert_rules():
+    """List currently configured alert rules."""
+    return [
+        {"index": i, "sensor_id": r.sensor_id, "metric": r.metric,
+         "threshold_high": r.threshold_high, "threshold_low": r.threshold_low}
+        for i, r in enumerate(alert_engine.rules)
+    ]
+
+
+@app.delete("/alerts/rules/{idx}", status_code=204)
+def delete_alert_rule(idx: int):
+    """Remove rule by index from list."""
+    if idx < 0 or idx >= len(alert_engine.rules):
+        raise HTTPException(status_code=404, detail="rule index out of range")
+    removed = alert_engine.rules.pop(idx)
+    audit_log.record("alert.rule.delete", f"sensor:{removed.sensor_id}", {"index": idx})
+    return None
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

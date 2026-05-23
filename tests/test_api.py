@@ -889,3 +889,17 @@ def test_alerts_clear_empties_history():
     assert len(client.get("/alerts/history").json()) > 0
     assert client.delete("/alerts/clear").status_code == 204
     assert client.get("/alerts/history").json() == []
+
+
+def test_alert_rules_list_and_delete():
+    reg = client.post("/sensors", json={"name": "rules-test", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_high=50")
+    rules = client.get("/alerts/rules").json()
+    assert any(r["sensor_id"] == reg["id"] for r in rules)
+    matching = [r for r in rules if r["sensor_id"] == reg["id"]]
+    idx = matching[0]["index"]
+    assert client.delete(f"/alerts/rules/{idx}").status_code == 204
+
+
+def test_alert_rule_delete_bad_index():
+    assert client.delete("/alerts/rules/99999").status_code == 404
