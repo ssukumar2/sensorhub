@@ -862,3 +862,21 @@ def test_fleet_summary_reflects_state():
     client.post("/sensors", json={"name": "fleet-bump", "location": "lab"})
     after = client.get("/fleet/summary").json()
     assert after["sensors"] >= before["sensors"] + 1
+
+
+def test_sensor_aggregate_buckets():
+    reg = client.post("/sensors", json={"name": "agg-test", "location": "lab"}).json()
+    for v in (1, 2, 3, 4, 5, 6):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/aggregate?window=6&bucket=3")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body) == 2
+    assert body[0]["count"] == 3
+    assert body[1]["count"] == 3
+
+
+def test_sensor_aggregate_bad_params():
+    reg = client.post("/sensors", json={"name": "agg-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/aggregate?window=0&bucket=1").status_code == 400
+    assert client.get(f"/sensors/{reg['id']}/aggregate?window=10&bucket=100").status_code == 400

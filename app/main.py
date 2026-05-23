@@ -600,6 +600,41 @@ def fleet_summary(session: Session = Depends(get_session)):
     }
 
 
+@app.get("/sensors/{sensor_id}/aggregate")
+def sensor_aggregate(
+    sensor_id: int,
+    window: int = 100,
+    bucket: int = 10,
+    session: Session = Depends(get_session),
+):
+    """Bucket the last `window` readings into `bucket`-sized chunks with avg/min/max."""
+    if window < 1 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 1 and 5000")
+    if bucket < 1 or bucket > window:
+        raise HTTPException(status_code=400, detail="bucket must be between 1 and window")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    rows = list(reversed(rows))
+    out = []
+    for i in range(0, len(rows), bucket):
+        chunk = rows[i:i+bucket]
+        values = [r.value for r in chunk]
+        out.append({
+            "count": len(values),
+            "avg": round(sum(values)/len(values), 4),
+            "min": min(values),
+            "max": max(values),
+            "from": chunk[0].recorded_at.isoformat() if chunk[0].recorded_at else None,
+            "to": chunk[-1].recorded_at.isoformat() if chunk[-1].recorded_at else None,
+        })
+    return out
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
