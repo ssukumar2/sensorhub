@@ -880,3 +880,12 @@ def test_sensor_aggregate_bad_params():
     reg = client.post("/sensors", json={"name": "agg-bad", "location": "lab"}).json()
     assert client.get(f"/sensors/{reg['id']}/aggregate?window=0&bucket=1").status_code == 400
     assert client.get(f"/sensors/{reg['id']}/aggregate?window=10&bucket=100").status_code == 400
+
+
+def test_alerts_clear_empties_history():
+    reg = client.post("/sensors", json={"name": "clr-alert", "location": "lab"}).json()
+    client.post(f"/alerts/rules?sensor_id={reg['id']}&threshold_high=1")
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 99.0, "unit": "celsius"}, reg["api_key"])
+    assert len(client.get("/alerts/history").json()) > 0
+    assert client.delete("/alerts/clear").status_code == 204
+    assert client.get("/alerts/history").json() == []

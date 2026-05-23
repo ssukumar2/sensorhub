@@ -635,6 +635,14 @@ def sensor_aggregate(
     return out
 
 
+@app.delete("/alerts/clear", status_code=204)
+def clear_alert_history():
+    """Admin: wipe alert history."""
+    alert_engine.history.clear()
+    audit_log.record("alerts.clear", "history", {})
+    return None
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
