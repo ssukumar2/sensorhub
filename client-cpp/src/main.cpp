@@ -1,5 +1,6 @@
 #include "config.hpp"
 #include "logger.hpp"
+#include "signal_handler.hpp"
 #include "metrics.hpp"
 #include "backend_client.hpp"
 #include "firmware_client.hpp"
@@ -21,15 +22,11 @@
 #include <string>
 #include <thread>
 
-volatile std::sig_atomic_t keep_running = 1;
 
-void handle_sigint(int) {
-    keep_running = 0;
-}
 
 int main(int argc, char* argv[]) 
 {
-    std::signal(SIGINT, handle_sigint);
+    SignalHandler::instance().install();
 
     for (int i = 1; i < argc; ++i)
     {
@@ -116,7 +113,7 @@ int main(int argc, char* argv[])
 
         Logger::instance().info("mqtt connected, starting loop");
 
-        while (keep_running) 
+        while (SignalHandler::instance().keep_running()) 
         {
             double t = temp_dist(gen);
             if (mqtt.publish_reading(sensor.id, t, "celsius")) 
@@ -130,7 +127,7 @@ int main(int argc, char* argv[])
                 MetricsCollector::instance().record_failure();
                 Logger::instance().error("mqtt publish failed");
             }
-            for (int i = 0; i < interval && keep_running; ++i) 
+            for (int i = 0; i < interval && SignalHandler::instance().keep_running(); ++i) 
             {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
@@ -146,7 +143,7 @@ int main(int argc, char* argv[])
         }
         std::cout << "CAN mode on vcan0. starting loop..." << std::endl;
 
-        while (keep_running)
+        while (SignalHandler::instance().keep_running())
         {
             double t = temp_dist(gen);
             sensorproto::SensorReading reading;
@@ -170,7 +167,7 @@ int main(int argc, char* argv[])
                 std::cerr << "CAN send failed" << std::endl;
             }
 
-            for (int i = 0; i < interval && keep_running; ++i)
+            for (int i = 0; i < interval && SignalHandler::instance().keep_running(); ++i)
                 std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
@@ -185,7 +182,7 @@ int main(int argc, char* argv[])
                 commands.ack(c.id, sensor.api_key, "received");
             }
         };
-        while (keep_running) 
+        while (SignalHandler::instance().keep_running()) 
         {
             double t = temp_dist(gen);
             poll_and_handle();
@@ -202,7 +199,7 @@ int main(int argc, char* argv[])
                 MetricsCollector::instance().record_failure();
                 Logger::instance().error("http send failed after retries");
             }
-            for (int i = 0; i < interval && keep_running; ++i) 
+            for (int i = 0; i < interval && SignalHandler::instance().keep_running(); ++i) 
             {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
