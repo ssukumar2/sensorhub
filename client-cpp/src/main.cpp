@@ -2,6 +2,7 @@
 #include "logger.hpp"
 #include "signal_handler.hpp"
 #include "metrics.hpp"
+#include "stats_reporter.hpp"
 #include "backend_client.hpp"
 #include "firmware_client.hpp"
 #include "firmware_updater.hpp"
@@ -81,6 +82,9 @@ int main(int argc, char* argv[])
     HealthChecker health_checker(http, 30);
     if (cfg.health_check)
         health_checker.start();
+
+    StatsReporter stats(60);
+    stats.start();
 
     const std::string current_version = "0.1.0";
     FirmwareClient firmware(cfg.backend_url);
@@ -207,6 +211,7 @@ int main(int argc, char* argv[])
     }
 
     health_checker.stop();
+    stats.stop();
     auto& m = MetricsCollector::instance();
     std::cout << "\nstopped after " << count << " readings"
               << " (success=" << m.successes()
