@@ -31,8 +31,6 @@ public:
     // Returns true if sensor with given id exists on the backend.
     bool sensor_exists(int sensor_id);
 
-    // Returns true if sensor with given id exists on the backend.
-    bool sensor_exists(int sensor_id);
 
     // Submits multiple readings in one HMAC-signed request. Returns true on 201.
     struct ReadingItem { double value; std::string unit; };
