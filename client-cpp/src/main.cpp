@@ -58,10 +58,20 @@ int main(int argc, char* argv[])
 
     BackendClient http(cfg.backend_url);
 
-    if (!http.check_health()) 
     {
-        std::cerr << "backend not reachable at " << cfg.backend_url << std::endl;
-        return 1;
+        int attempts = 0;
+        const int max_attempts = 30;
+        while (!http.check_health())
+        {
+            ++attempts;
+            if (attempts >= max_attempts)
+            {
+                Logger::instance().error("backend not reachable at " + cfg.backend_url + " after " + std::to_string(max_attempts) + " attempts");
+                return 1;
+            }
+            Logger::instance().warn("waiting for backend... attempt " + std::to_string(attempts));
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
     }
 
 
