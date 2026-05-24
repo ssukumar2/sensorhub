@@ -28,6 +28,10 @@ public:
     // Returns true on success (201), false otherwise.
     bool submit_reading(const SensorIdentity& sensor, double value, const std::string& unit);
 
+    // Returns true if sensor with given id exists on the backend.
+    bool sensor_exists(int sensor_id);
+
+
     // Submits multiple readings in one HMAC-signed request. Returns true on 201.
     struct ReadingItem { double value; std::string unit; };
     bool submit_batch(const SensorIdentity& sensor, const std::vector<ReadingItem>& items);

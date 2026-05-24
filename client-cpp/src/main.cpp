@@ -1,6 +1,8 @@
 #include "config.hpp"
 #include "logger.hpp"
+#include "signal_handler.hpp"
 #include "metrics.hpp"
+#include "stats_reporter.hpp"
 #include "backend_client.hpp"
 #include "firmware_client.hpp"
 #include "firmware_updater.hpp"
@@ -21,15 +23,11 @@
 #include <string>
 #include <thread>
 
-volatile std::sig_atomic_t keep_running = 1;
 
-void handle_sigint(int) {
-    keep_running = 0;
-}
 
 int main(int argc, char* argv[]) 
 {
-    std::signal(SIGINT, handle_sigint);
+    SignalHandler::instance().install();
 
     for (int i = 1; i < argc; ++i)
     {
@@ -60,10 +58,20 @@ int main(int argc, char* argv[])
 
     BackendClient http(cfg.backend_url);
 
-    if (!http.check_health()) 
     {
-        std::cerr << "backend not reachable at " << cfg.backend_url << std::endl;
-        return 1;
+        int attempts = 0;
+        const int max_attempts = 30;
+        while (!http.check_health())
+        {
+            ++attempts;
+            if (attempts >= max_attempts)
+            {
+                Logger::instance().error("backend not reachable at " + cfg.backend_url + " after " + std::to_string(max_attempts) + " attempts");
+                return 1;
+            }
+            Logger::instance().warn("waiting for backend... attempt " + std::to_string(attempts));
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
     }
 
 
@@ -84,6 +92,9 @@ int main(int argc, char* argv[])
     HealthChecker health_checker(http, 30);
     if (cfg.health_check)
         health_checker.start();
+
+    StatsReporter stats(60);
+    stats.start();
 
     const std::string current_version = "0.1.0";
     FirmwareClient firmware(cfg.backend_url);
@@ -116,7 +127,7 @@ int main(int argc, char* argv[])
 
         Logger::instance().info("mqtt connected, starting loop");
 
-        while (keep_running) 
+        while (SignalHandler::instance().keep_running()) 
         {
             double t = temp_dist(gen);
             if (mqtt.publish_reading(sensor.id, t, "celsius")) 
@@ -130,7 +141,7 @@ int main(int argc, char* argv[])
                 MetricsCollector::instance().record_failure();
                 Logger::instance().error("mqtt publish failed");
             }
-            for (int i = 0; i < interval && keep_running; ++i) 
+            for (int i = 0; i < interval && SignalHandler::instance().keep_running(); ++i) 
             {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
@@ -146,7 +157,7 @@ int main(int argc, char* argv[])
         }
         std::cout << "CAN mode on vcan0. starting loop..." << std::endl;
 
-        while (keep_running)
+        while (SignalHandler::instance().keep_running())
         {
             double t = temp_dist(gen);
             sensorproto::SensorReading reading;
@@ -170,7 +181,7 @@ int main(int argc, char* argv[])
                 std::cerr << "CAN send failed" << std::endl;
             }
 
-            for (int i = 0; i < interval && keep_running; ++i)
+            for (int i = 0; i < interval && SignalHandler::instance().keep_running(); ++i)
                 std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
@@ -185,7 +196,7 @@ int main(int argc, char* argv[])
                 commands.ack(c.id, sensor.api_key, "received");
             }
         };
-        while (keep_running) 
+        while (SignalHandler::instance().keep_running()) 
         {
             double t = temp_dist(gen);
             poll_and_handle();
@@ -202,7 +213,7 @@ int main(int argc, char* argv[])
                 MetricsCollector::instance().record_failure();
                 Logger::instance().error("http send failed after retries");
             }
-            for (int i = 0; i < interval && keep_running; ++i) 
+            for (int i = 0; i < interval && SignalHandler::instance().keep_running(); ++i) 
             {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
@@ -210,6 +221,7 @@ int main(int argc, char* argv[])
     }
 
     health_checker.stop();
+    stats.stop();
     auto& m = MetricsCollector::instance();
     std::cout << "\nstopped after " << count << " readings"
               << " (success=" << m.successes()

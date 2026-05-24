@@ -110,3 +110,9 @@ bool BackendClient::submit_batch(const SensorIdentity& sensor, const std::vector
 
     return r.status_code == 201;
 }
+
+bool BackendClient::sensor_exists(int sensor_id)
+{
+    cpr::Response r = cpr::Get(cpr::Url{backend_url_ + "/sensors/" + std::to_string(sensor_id)});
+    return r.status_code == 200;
+}

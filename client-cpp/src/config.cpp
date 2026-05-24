@@ -1,10 +1,20 @@
 #include "config.hpp"
+#include "env_loader.hpp"
 
 #include <string>
 
 ClientConfig ClientConfig::from_args(int argc, char* argv[])
 {
     ClientConfig c;
+    c.backend_url = EnvLoader::get("SENSORHUB_BACKEND_URL", c.backend_url);
+    c.mqtt_url = EnvLoader::get("SENSORHUB_MQTT_URL", c.mqtt_url);
+    c.can_iface = EnvLoader::get("SENSORHUB_CAN_IFACE", c.can_iface);
+    c.sensor_name = EnvLoader::get("SENSORHUB_SENSOR_NAME", c.sensor_name);
+    c.sensor_location = EnvLoader::get("SENSORHUB_SENSOR_LOCATION", c.sensor_location);
+    c.mode = EnvLoader::get("SENSORHUB_MODE", c.mode);
+    c.interval_seconds = EnvLoader::get_int("SENSORHUB_INTERVAL", c.interval_seconds);
+    c.log_level = EnvLoader::get("SENSORHUB_LOG_LEVEL", c.log_level);
+    c.health_check = EnvLoader::get_bool("SENSORHUB_HEALTH_CHECK", c.health_check);
     for (int i = 1; i < argc; ++i)
     {
         std::string arg = argv[i];
