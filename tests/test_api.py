@@ -943,3 +943,140 @@ def test_health_detail_shape():
     for k in ("status", "uptime_seconds", "sensors", "readings", "last_reading_at", "db_size_bytes"):
         assert k in body
     assert body["status"] == "ok"
+
+
+def test_sensors_pagination_limits_results():
+    for i in range(5):
+        client.post("/sensors", json={"name": f"page-{i}", "location": "lab"})
+    response = client.get("/sensors?limit=3")
+    assert response.status_code == 200
+    assert len(response.json()) == 3
+
+
+def test_sensors_pagination_rejects_bad_params():
+    assert client.get("/sensors?offset=-1").status_code == 400
+    assert client.get("/sensors?limit=0").status_code == 400
+    assert client.get("/sensors?limit=9999").status_code == 400
+
+
+def test_readings_cleanup_bad_days():
+    assert client.delete("/readings/cleanup?days=0").status_code == 400
+    assert client.delete("/readings/cleanup?days=99999").status_code == 400
+
+
+def test_readings_cleanup_returns_count():
+    response = client.delete("/readings/cleanup?days=1")
+    assert response.status_code == 200
+    body = response.json()
+    assert "deleted" in body
+    assert body["older_than_days"] == 1
+
+
+def test_sensor_disable_marks_state():
+    reg = client.post("/sensors", json={"name": "dis-test", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": reg["api_key"]})
+    assert response.status_code == 200
+    tags = client.get(f"/sensors/{reg['id']}/tags").json()
+    assert any(t["key"] == "state" and t["value"] == "disabled" for t in tags)
+
+
+def test_sensor_enable_marks_state():
+    reg = client.post("/sensors", json={"name": "en-test", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": reg["api_key"]})
+    client.post(f"/sensors/{reg['id']}/enable", headers={"x-api-key": reg["api_key"]})
+    tags = client.get(f"/sensors/{reg['id']}/tags").json()
+    assert any(t["key"] == "state" and t["value"] == "enabled" for t in tags)
+
+
+def test_sensor_disable_requires_auth():
+    reg = client.post("/sensors", json={"name": "dis-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_disabled_sensor_rejects_readings():
+    reg = client.post("/sensors", json={"name": "no-readings", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": reg["api_key"]})
+    response = _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    assert response.status_code == 403
+
+
+def test_audit_search_filters_by_action():
+    reg = client.post("/sensors", json={"name": "audit-search", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/commands?type=ping")
+    response = client.get("/audit/search?action=command")
+    assert response.status_code == 200
+    assert all(e["action"].startswith("command") for e in response.json())
+
+
+def test_audit_search_bad_limit():
+    assert client.get("/audit/search?limit=0").status_code == 400
+
+
+def test_sensor_tags_dict_returns_flat_map():
+    reg = client.post("/sensors", json={"name": "tag-dict", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=group&value=alpha", headers={"x-api-key": reg["api_key"]})
+    client.post(f"/sensors/{reg['id']}/tags?key=zone&value=z1", headers={"x-api-key": reg["api_key"]})
+    response = client.get(f"/sensors/{reg['id']}/tags/dict")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["group"] == "alpha"
+    assert body["zone"] == "z1"
+
+
+def test_firmware_check_all_no_latest():
+    response = client.get("/firmware/check-all")
+    assert response.status_code == 200
+    body = response.json()
+    assert "devices" in body
+
+
+def test_firmware_check_all_with_reported():
+    client.post("/firmware/latest?version=ck-all-1.0")
+    reg = client.post("/sensors", json={"name": "fw-check-all", "location": "lab"}).json()
+    client.post(f"/firmware/report?sensor_id={reg['id']}&version=ck-all-1.0", headers={"x-api-key": reg["api_key"]})
+    response = client.get("/firmware/check-all")
+    body = response.json()
+    matched = [d for d in body["devices"] if d["sensor_id"] == reg["id"]]
+    assert matched and matched[0]["up_to_date"] is True
+
+
+def test_inactive_sensors_includes_no_readings():
+    reg = client.post("/sensors", json={"name": "never-reported", "location": "lab"}).json()
+    response = client.get("/sensors/inactive?minutes=1")
+    assert response.status_code == 200
+    body = response.json()
+    assert any(s["sensor_id"] == reg["id"] and s["last_seen"] is None for s in body)
+
+
+def test_inactive_sensors_bad_minutes():
+    assert client.get("/sensors/inactive?minutes=0").status_code == 400
+
+
+def test_group_stats_aggregates():
+    s1 = client.post("/sensors", json={"name": "gs-1", "location": "lab"}).json()
+    s2 = client.post("/sensors", json={"name": "gs-2", "location": "lab"}).json()
+    client.post(f"/sensors/{s1['id']}/tags?key=group&value=stats-grp", headers={"x-api-key": s1["api_key"]})
+    client.post(f"/sensors/{s2['id']}/tags?key=group&value=stats-grp", headers={"x-api-key": s2["api_key"]})
+    _signed_post("/readings", {"sensor_id": s1["id"], "value": 10.0, "unit": "celsius"}, s1["api_key"])
+    _signed_post("/readings", {"sensor_id": s2["id"], "value": 30.0, "unit": "celsius"}, s2["api_key"])
+    response = client.get("/groups/stats-grp/stats")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sensor_count"] == 2
+    assert body["reading_count"] == 2
+    assert body["min"] == 10.0
+    assert body["max"] == 30.0
+
+
+def test_group_stats_unknown_group():
+    assert client.get("/groups/no-such/stats").status_code == 404
+
+
+def test_duplicates_finds_matching_names():
+    client.post("/sensors", json={"name": "dup-name-aaa", "location": "site-1"})
+    client.post("/sensors", json={"name": "dup-name-aaa", "location": "site-2"})
+    response = client.get("/sensors/duplicates")
+    assert response.status_code == 200
+    body = response.json()
+    assert "dup-name-aaa" in body
+    assert len(body["dup-name-aaa"]) >= 2

@@ -110,9 +110,15 @@ def register_sensor(
 
 
 @app.get("/sensors", response_model=List[Sensor])
-def list_sensors(session: Session = Depends(get_session)):
-    """List all registered sensors."""
-    return session.exec(select(Sensor)).all()
+def list_sensors(
+    offset: int = 0,
+    limit: int = 100,
+    session: Session = Depends(get_session),
+):
+    """List sensors with offset/limit pagination."""
+    if offset < 0 or limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="invalid pagination")
+    return session.exec(select(Sensor).offset(offset).limit(limit)).all()
 
 
 @app.get("/sensors/count")
@@ -723,6 +729,150 @@ def health_detail(session: Session = Depends(get_session)):
     }
 
 
+@app.delete("/readings/cleanup")
+def cleanup_old_readings(days: int = 30, session: Session = Depends(get_session)):
+    """Admin: delete readings older than N days."""
+    if days < 1 or days > 3650:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 3650")
+    from datetime import datetime as _dt, timedelta
+    cutoff = _dt.utcnow() - timedelta(days=days)
+    rows = session.exec(select(Reading).where(Reading.recorded_at < cutoff)).all()
+    deleted = len(rows)
+    for r in rows:
+        session.delete(r)
+    session.commit()
+    audit_log.record("readings.cleanup", "global", {"days": days, "deleted": deleted})
+    return {"deleted": deleted, "older_than_days": days}
+
+
+@app.post("/sensors/{sensor_id}/disable")
+def disable_sensor(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Mark a sensor inactive via state=disabled tag."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    tag_registry.add_tag(sensor_id, "state", "disabled")
+    audit_log.record("sensor.disable", f"sensor:{sensor_id}", {})
+    return {"sensor_id": sensor_id, "state": "disabled"}
+
+
+@app.post("/sensors/{sensor_id}/enable")
+def enable_sensor(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Mark a sensor active again."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    tag_registry.add_tag(sensor_id, "state", "enabled")
+    audit_log.record("sensor.enable", f"sensor:{sensor_id}", {})
+    return {"sensor_id": sensor_id, "state": "enabled"}
+
+
+@app.get("/audit/search")
+def search_audit(action: Optional[str] = None, target: Optional[str] = None, limit: int = 100):
+    """Filter audit log by action prefix or target."""
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    out = audit_log.recent(1000)
+    if action:
+        out = [e for e in out if e["action"].startswith(action)]
+    if target:
+        out = [e for e in out if target in e["target"]]
+    return out[:limit]
+
+
+@app.get("/sensors/{sensor_id}/tags/dict")
+def sensor_tags_dict(sensor_id: int, session: Session = Depends(get_session)):
+    """Return tags as a flat key->value dict (convenient for frontends)."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    return {t.key: t.value for t in tag_registry.get_tags(sensor_id)}
+
+
+@app.get("/firmware/check-all")
+def firmware_check_all():
+    """Admin: list devices and whether each is on the latest firmware."""
+    latest = firmware_tracker.latest()
+    if not latest["version"]:
+        return {"latest": None, "devices": []}
+    out = []
+    for fw in firmware_tracker.get_all():
+        out.append({
+            "sensor_id": fw.sensor_id,
+            "version": fw.version,
+            "up_to_date": fw.version == latest["version"],
+        })
+    return {"latest": latest["version"], "devices": out}
+
+
+@app.get("/sensors/inactive")
+def find_inactive_sensors(minutes: int = 10, session: Session = Depends(get_session)):
+    """List sensors whose last reading is older than `minutes` (or never reported)."""
+    if minutes < 1 or minutes > 10080:
+        raise HTTPException(status_code=400, detail="minutes must be between 1 and 10080")
+    from datetime import datetime as _dt, timedelta
+    cutoff = _dt.utcnow() - timedelta(minutes=minutes)
+    sensors = session.exec(select(Sensor)).all()
+    out = []
+    for sensor in sensors:
+        last = session.exec(
+            select(Reading).where(Reading.sensor_id == sensor.id)
+            .order_by(Reading.id.desc()).limit(1)
+        ).first()
+        if last is None:
+            out.append({"sensor_id": sensor.id, "name": sensor.name, "last_seen": None})
+        elif last.recorded_at and last.recorded_at < cutoff:
+            out.append({
+                "sensor_id": sensor.id,
+                "name": sensor.name,
+                "last_seen": last.recorded_at.isoformat(),
+            })
+    return out
+
+
+@app.get("/groups/{name}/stats")
+def group_stats(name: str, session: Session = Depends(get_session)):
+    """Aggregate readings across all sensors in a group."""
+    groups = tag_registry.get_groups()
+    if name not in groups:
+        raise HTTPException(status_code=404, detail=f"group '{name}' not found")
+    sensor_ids = groups[name]
+    rows = session.exec(select(Reading).where(Reading.sensor_id.in_(sensor_ids))).all()
+    if not rows:
+        return {"group": name, "sensor_count": len(sensor_ids), "reading_count": 0, "avg": None, "min": None, "max": None}
+    values = [r.value for r in rows]
+    return {
+        "group": name,
+        "sensor_count": len(sensor_ids),
+        "reading_count": len(values),
+        "avg": round(sum(values)/len(values), 4),
+        "min": min(values),
+        "max": max(values),
+    }
+
+
+@app.get("/sensors/duplicates")
+def find_duplicate_sensors(session: Session = Depends(get_session)):
+    """Find sensors with identical names (potential data hygiene issue)."""
+    sensors = session.exec(select(Sensor)).all()
+    by_name = {}
+    for s in sensors:
+        by_name.setdefault(s.name, []).append({"id": s.id, "location": s.location})
+    return {name: ids for name, ids in by_name.items() if len(ids) > 1}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
@@ -742,6 +892,9 @@ def submit_reading(
     """Submit a telemetry reading from a sensor."""
     if sensor.id != payload.sensor_id:
         raise HTTPException(status_code=403, detail="sensor id mismatch")
+    state_tags = [t for t in tag_registry.get_tags(payload.sensor_id) if t.key == "state"]
+    if state_tags and state_tags[0].value == "disabled":
+        raise HTTPException(status_code=403, detail="sensor is disabled")
     reading = Reading(
         sensor_id=payload.sensor_id,
         value=payload.value,
