@@ -943,3 +943,17 @@ def test_health_detail_shape():
     for k in ("status", "uptime_seconds", "sensors", "readings", "last_reading_at", "db_size_bytes"):
         assert k in body
     assert body["status"] == "ok"
+
+
+def test_sensors_pagination_limits_results():
+    for i in range(5):
+        client.post("/sensors", json={"name": f"page-{i}", "location": "lab"})
+    response = client.get("/sensors?limit=3")
+    assert response.status_code == 200
+    assert len(response.json()) == 3
+
+
+def test_sensors_pagination_rejects_bad_params():
+    assert client.get("/sensors?offset=-1").status_code == 400
+    assert client.get("/sensors?limit=0").status_code == 400
+    assert client.get("/sensors?limit=9999").status_code == 400
