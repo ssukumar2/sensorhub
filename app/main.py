@@ -842,6 +842,27 @@ def find_inactive_sensors(minutes: int = 10, session: Session = Depends(get_sess
     return out
 
 
+@app.get("/groups/{name}/stats")
+def group_stats(name: str, session: Session = Depends(get_session)):
+    """Aggregate readings across all sensors in a group."""
+    groups = tag_registry.get_groups()
+    if name not in groups:
+        raise HTTPException(status_code=404, detail=f"group '{name}' not found")
+    sensor_ids = groups[name]
+    rows = session.exec(select(Reading).where(Reading.sensor_id.in_(sensor_ids))).all()
+    if not rows:
+        return {"group": name, "sensor_count": len(sensor_ids), "reading_count": 0, "avg": None, "min": None, "max": None}
+    values = [r.value for r in rows]
+    return {
+        "group": name,
+        "sensor_count": len(sensor_ids),
+        "reading_count": len(values),
+        "avg": round(sum(values)/len(values), 4),
+        "min": min(values),
+        "max": max(values),
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

@@ -1050,3 +1050,23 @@ def test_inactive_sensors_includes_no_readings():
 
 def test_inactive_sensors_bad_minutes():
     assert client.get("/sensors/inactive?minutes=0").status_code == 400
+
+
+def test_group_stats_aggregates():
+    s1 = client.post("/sensors", json={"name": "gs-1", "location": "lab"}).json()
+    s2 = client.post("/sensors", json={"name": "gs-2", "location": "lab"}).json()
+    client.post(f"/sensors/{s1['id']}/tags?key=group&value=stats-grp", headers={"x-api-key": s1["api_key"]})
+    client.post(f"/sensors/{s2['id']}/tags?key=group&value=stats-grp", headers={"x-api-key": s2["api_key"]})
+    _signed_post("/readings", {"sensor_id": s1["id"], "value": 10.0, "unit": "celsius"}, s1["api_key"])
+    _signed_post("/readings", {"sensor_id": s2["id"], "value": 30.0, "unit": "celsius"}, s2["api_key"])
+    response = client.get("/groups/stats-grp/stats")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sensor_count"] == 2
+    assert body["reading_count"] == 2
+    assert body["min"] == 10.0
+    assert body["max"] == 30.0
+
+
+def test_group_stats_unknown_group():
+    assert client.get("/groups/no-such/stats").status_code == 404
