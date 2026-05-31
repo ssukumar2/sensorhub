@@ -817,6 +817,31 @@ def firmware_check_all():
     return {"latest": latest["version"], "devices": out}
 
 
+@app.get("/sensors/inactive")
+def find_inactive_sensors(minutes: int = 10, session: Session = Depends(get_session)):
+    """List sensors whose last reading is older than `minutes` (or never reported)."""
+    if minutes < 1 or minutes > 10080:
+        raise HTTPException(status_code=400, detail="minutes must be between 1 and 10080")
+    from datetime import datetime as _dt, timedelta
+    cutoff = _dt.utcnow() - timedelta(minutes=minutes)
+    sensors = session.exec(select(Sensor)).all()
+    out = []
+    for sensor in sensors:
+        last = session.exec(
+            select(Reading).where(Reading.sensor_id == sensor.id)
+            .order_by(Reading.id.desc()).limit(1)
+        ).first()
+        if last is None:
+            out.append({"sensor_id": sensor.id, "name": sensor.name, "last_seen": None})
+        elif last.recorded_at and last.recorded_at < cutoff:
+            out.append({
+                "sensor_id": sensor.id,
+                "name": sensor.name,
+                "last_seen": last.recorded_at.isoformat(),
+            })
+    return out
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

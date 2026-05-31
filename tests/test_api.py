@@ -1038,3 +1038,15 @@ def test_firmware_check_all_with_reported():
     body = response.json()
     matched = [d for d in body["devices"] if d["sensor_id"] == reg["id"]]
     assert matched and matched[0]["up_to_date"] is True
+
+
+def test_inactive_sensors_includes_no_readings():
+    reg = client.post("/sensors", json={"name": "never-reported", "location": "lab"}).json()
+    response = client.get("/sensors/inactive?minutes=1")
+    assert response.status_code == 200
+    body = response.json()
+    assert any(s["sensor_id"] == reg["id"] and s["last_seen"] is None for s in body)
+
+
+def test_inactive_sensors_bad_minutes():
+    assert client.get("/sensors/inactive?minutes=0").status_code == 400
