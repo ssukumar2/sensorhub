@@ -110,9 +110,15 @@ def register_sensor(
 
 
 @app.get("/sensors", response_model=List[Sensor])
-def list_sensors(session: Session = Depends(get_session)):
-    """List all registered sensors."""
-    return session.exec(select(Sensor)).all()
+def list_sensors(
+    offset: int = 0,
+    limit: int = 100,
+    session: Session = Depends(get_session),
+):
+    """List sensors with offset/limit pagination."""
+    if offset < 0 or limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="invalid pagination")
+    return session.exec(select(Sensor).offset(offset).limit(limit)).all()
 
 
 @app.get("/sensors/count")
