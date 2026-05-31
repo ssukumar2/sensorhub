@@ -970,3 +970,24 @@ def test_readings_cleanup_returns_count():
     body = response.json()
     assert "deleted" in body
     assert body["older_than_days"] == 1
+
+
+def test_sensor_disable_marks_state():
+    reg = client.post("/sensors", json={"name": "dis-test", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": reg["api_key"]})
+    assert response.status_code == 200
+    tags = client.get(f"/sensors/{reg['id']}/tags").json()
+    assert any(t["key"] == "state" and t["value"] == "disabled" for t in tags)
+
+
+def test_sensor_enable_marks_state():
+    reg = client.post("/sensors", json={"name": "en-test", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": reg["api_key"]})
+    client.post(f"/sensors/{reg['id']}/enable", headers={"x-api-key": reg["api_key"]})
+    tags = client.get(f"/sensors/{reg['id']}/tags").json()
+    assert any(t["key"] == "state" and t["value"] == "enabled" for t in tags)
+
+
+def test_sensor_disable_requires_auth():
+    reg = client.post("/sensors", json={"name": "dis-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": "wrong"}).status_code == 401
