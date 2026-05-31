@@ -801,6 +801,22 @@ def sensor_tags_dict(sensor_id: int, session: Session = Depends(get_session)):
     return {t.key: t.value for t in tag_registry.get_tags(sensor_id)}
 
 
+@app.get("/firmware/check-all")
+def firmware_check_all():
+    """Admin: list devices and whether each is on the latest firmware."""
+    latest = firmware_tracker.latest()
+    if not latest["version"]:
+        return {"latest": None, "devices": []}
+    out = []
+    for fw in firmware_tracker.get_all():
+        out.append({
+            "sensor_id": fw.sensor_id,
+            "version": fw.version,
+            "up_to_date": fw.version == latest["version"],
+        })
+    return {"latest": latest["version"], "devices": out}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

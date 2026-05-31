@@ -1021,3 +1021,20 @@ def test_sensor_tags_dict_returns_flat_map():
     body = response.json()
     assert body["group"] == "alpha"
     assert body["zone"] == "z1"
+
+
+def test_firmware_check_all_no_latest():
+    response = client.get("/firmware/check-all")
+    assert response.status_code == 200
+    body = response.json()
+    assert "devices" in body
+
+
+def test_firmware_check_all_with_reported():
+    client.post("/firmware/latest?version=ck-all-1.0")
+    reg = client.post("/sensors", json={"name": "fw-check-all", "location": "lab"}).json()
+    client.post(f"/firmware/report?sensor_id={reg['id']}&version=ck-all-1.0", headers={"x-api-key": reg["api_key"]})
+    response = client.get("/firmware/check-all")
+    body = response.json()
+    matched = [d for d in body["devices"] if d["sensor_id"] == reg["id"]]
+    assert matched and matched[0]["up_to_date"] is True
