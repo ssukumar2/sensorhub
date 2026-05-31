@@ -991,3 +991,10 @@ def test_sensor_enable_marks_state():
 def test_sensor_disable_requires_auth():
     reg = client.post("/sensors", json={"name": "dis-noauth", "location": "lab"}).json()
     assert client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_disabled_sensor_rejects_readings():
+    reg = client.post("/sensors", json={"name": "no-readings", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": reg["api_key"]})
+    response = _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    assert response.status_code == 403

@@ -798,6 +798,9 @@ def submit_reading(
     """Submit a telemetry reading from a sensor."""
     if sensor.id != payload.sensor_id:
         raise HTTPException(status_code=403, detail="sensor id mismatch")
+    state_tags = [t for t in tag_registry.get_tags(payload.sensor_id) if t.key == "state"]
+    if state_tags and state_tags[0].value == "disabled":
+        raise HTTPException(status_code=403, detail="sensor is disabled")
     reading = Reading(
         sensor_id=payload.sensor_id,
         value=payload.value,
