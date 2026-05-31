@@ -957,3 +957,16 @@ def test_sensors_pagination_rejects_bad_params():
     assert client.get("/sensors?offset=-1").status_code == 400
     assert client.get("/sensors?limit=0").status_code == 400
     assert client.get("/sensors?limit=9999").status_code == 400
+
+
+def test_readings_cleanup_bad_days():
+    assert client.delete("/readings/cleanup?days=0").status_code == 400
+    assert client.delete("/readings/cleanup?days=99999").status_code == 400
+
+
+def test_readings_cleanup_returns_count():
+    response = client.delete("/readings/cleanup?days=1")
+    assert response.status_code == 200
+    body = response.json()
+    assert "deleted" in body
+    assert body["older_than_days"] == 1
