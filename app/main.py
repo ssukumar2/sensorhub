@@ -863,6 +863,16 @@ def group_stats(name: str, session: Session = Depends(get_session)):
     }
 
 
+@app.get("/sensors/duplicates")
+def find_duplicate_sensors(session: Session = Depends(get_session)):
+    """Find sensors with identical names (potential data hygiene issue)."""
+    sensors = session.exec(select(Sensor)).all()
+    by_name = {}
+    for s in sensors:
+        by_name.setdefault(s.name, []).append({"id": s.id, "location": s.location})
+    return {name: ids for name, ids in by_name.items() if len(ids) > 1}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

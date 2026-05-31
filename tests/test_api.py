@@ -1070,3 +1070,13 @@ def test_group_stats_aggregates():
 
 def test_group_stats_unknown_group():
     assert client.get("/groups/no-such/stats").status_code == 404
+
+
+def test_duplicates_finds_matching_names():
+    client.post("/sensors", json={"name": "dup-name-aaa", "location": "site-1"})
+    client.post("/sensors", json={"name": "dup-name-aaa", "location": "site-2"})
+    response = client.get("/sensors/duplicates")
+    assert response.status_code == 200
+    body = response.json()
+    assert "dup-name-aaa" in body
+    assert len(body["dup-name-aaa"]) >= 2
