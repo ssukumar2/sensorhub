@@ -729,6 +729,22 @@ def health_detail(session: Session = Depends(get_session)):
     }
 
 
+@app.delete("/readings/cleanup")
+def cleanup_old_readings(days: int = 30, session: Session = Depends(get_session)):
+    """Admin: delete readings older than N days."""
+    if days < 1 or days > 3650:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 3650")
+    from datetime import datetime as _dt, timedelta
+    cutoff = _dt.utcnow() - timedelta(days=days)
+    rows = session.exec(select(Reading).where(Reading.recorded_at < cutoff)).all()
+    deleted = len(rows)
+    for r in rows:
+        session.delete(r)
+    session.commit()
+    audit_log.record("readings.cleanup", "global", {"days": days, "deleted": deleted})
+    return {"deleted": deleted, "older_than_days": days}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
