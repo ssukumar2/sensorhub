@@ -745,6 +745,40 @@ def cleanup_old_readings(days: int = 30, session: Session = Depends(get_session)
     return {"deleted": deleted, "older_than_days": days}
 
 
+@app.post("/sensors/{sensor_id}/disable")
+def disable_sensor(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Mark a sensor inactive via state=disabled tag."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    tag_registry.add_tag(sensor_id, "state", "disabled")
+    audit_log.record("sensor.disable", f"sensor:{sensor_id}", {})
+    return {"sensor_id": sensor_id, "state": "disabled"}
+
+
+@app.post("/sensors/{sensor_id}/enable")
+def enable_sensor(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Mark a sensor active again."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    tag_registry.add_tag(sensor_id, "state", "enabled")
+    audit_log.record("sensor.enable", f"sensor:{sensor_id}", {})
+    return {"sensor_id": sensor_id, "state": "enabled"}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
