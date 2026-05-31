@@ -792,6 +792,15 @@ def search_audit(action: Optional[str] = None, target: Optional[str] = None, lim
     return out[:limit]
 
 
+@app.get("/sensors/{sensor_id}/tags/dict")
+def sensor_tags_dict(sensor_id: int, session: Session = Depends(get_session)):
+    """Return tags as a flat key->value dict (convenient for frontends)."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    return {t.key: t.value for t in tag_registry.get_tags(sensor_id)}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

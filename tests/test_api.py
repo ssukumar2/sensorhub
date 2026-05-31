@@ -1010,3 +1010,14 @@ def test_audit_search_filters_by_action():
 
 def test_audit_search_bad_limit():
     assert client.get("/audit/search?limit=0").status_code == 400
+
+
+def test_sensor_tags_dict_returns_flat_map():
+    reg = client.post("/sensors", json={"name": "tag-dict", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=group&value=alpha", headers={"x-api-key": reg["api_key"]})
+    client.post(f"/sensors/{reg['id']}/tags?key=zone&value=z1", headers={"x-api-key": reg["api_key"]})
+    response = client.get(f"/sensors/{reg['id']}/tags/dict")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["group"] == "alpha"
+    assert body["zone"] == "z1"
