@@ -779,6 +779,19 @@ def enable_sensor(
     return {"sensor_id": sensor_id, "state": "enabled"}
 
 
+@app.get("/audit/search")
+def search_audit(action: Optional[str] = None, target: Optional[str] = None, limit: int = 100):
+    """Filter audit log by action prefix or target."""
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    out = audit_log.recent(1000)
+    if action:
+        out = [e for e in out if e["action"].startswith(action)]
+    if target:
+        out = [e for e in out if target in e["target"]]
+    return out[:limit]
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

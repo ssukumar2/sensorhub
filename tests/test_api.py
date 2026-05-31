@@ -998,3 +998,15 @@ def test_disabled_sensor_rejects_readings():
     client.post(f"/sensors/{reg['id']}/disable", headers={"x-api-key": reg["api_key"]})
     response = _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
     assert response.status_code == 403
+
+
+def test_audit_search_filters_by_action():
+    reg = client.post("/sensors", json={"name": "audit-search", "location": "lab"}).json()
+    client.post(f"/sensors/{reg['id']}/commands?type=ping")
+    response = client.get("/audit/search?action=command")
+    assert response.status_code == 200
+    assert all(e["action"].startswith("command") for e in response.json())
+
+
+def test_audit_search_bad_limit():
+    assert client.get("/audit/search?limit=0").status_code == 400
