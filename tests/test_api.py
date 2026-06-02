@@ -1115,3 +1115,12 @@ def test_fleet_summary_includes_can():
     body = response.json()
     assert "can_frames_received" in body
     assert "can_errors" in body
+
+
+def test_can_frames_by_sensor_filters():
+    from app.can.buffer import buffer
+    buffer.record(0x200, 777, 99.0, "celsius")
+    buffer.record(0x201, 888, 11.0, "celsius")
+    response = client.get("/can/frames/by-sensor/777")
+    body = response.json()
+    assert all(f["sensor_id"] == 777 for f in body)

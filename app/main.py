@@ -891,6 +891,16 @@ def can_frames_recent(limit: int = 50):
     return can_buffer.recent(limit)
 
 
+@app.get("/can/frames/by-sensor/{sensor_id}")
+def can_frames_by_sensor(sensor_id: int, limit: int = 50):
+    """Recent CAN frames received for a specific sensor."""
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    all_frames = can_buffer.recent(500)
+    out = [f for f in all_frames if f["sensor_id"] == sensor_id][:limit]
+    return out
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
