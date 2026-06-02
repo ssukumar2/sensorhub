@@ -597,6 +597,7 @@ def fleet_summary(session: Session = Depends(get_session)):
     reading_count = len(session.exec(select(Reading)).all())
     groups = tag_registry.get_groups()
     active = alert_engine.active()
+    can = can_buffer.stats()
     return {
         "sensors": sensor_count,
         "readings": reading_count,
@@ -604,6 +605,8 @@ def fleet_summary(session: Session = Depends(get_session)):
         "group_names": list(groups.keys()),
         "active_alerts": len(active),
         "firmware_latest": firmware_tracker.latest().get("version", ""),
+        "can_frames_received": can["frames_received"],
+        "can_errors": can["errors"],
     }
 
 

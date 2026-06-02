@@ -1108,3 +1108,10 @@ def test_can_buffer_records_frames():
     body = response.json()
     matched = [f for f in body if f["sensor_id"] == 42 and f["value"] == 22.5]
     assert matched
+
+
+def test_fleet_summary_includes_can():
+    response = client.get("/fleet/summary")
+    body = response.json()
+    assert "can_frames_received" in body
+    assert "can_errors" in body
