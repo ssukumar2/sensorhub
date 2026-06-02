@@ -901,6 +901,14 @@ def can_frames_by_sensor(sensor_id: int, limit: int = 50):
     return out
 
 
+@app.delete("/can/reset", status_code=204)
+def can_reset():
+    """Admin: clear the CAN frame buffer and stats counters."""
+    can_buffer.reset()
+    audit_log.record("can.reset", "buffer", {})
+    return None
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

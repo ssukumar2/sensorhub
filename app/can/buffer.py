@@ -44,6 +44,13 @@ class FrameBuffer:
             for f in items
         ]
 
+    def reset(self):
+        with self._lock:
+            self._buf.clear()
+            self._frame_count = 0
+            self._error_count = 0
+            self._by_sensor = {}
+
     def stats(self) -> dict:
         with self._lock:
             return {

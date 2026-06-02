@@ -1124,3 +1124,11 @@ def test_can_frames_by_sensor_filters():
     response = client.get("/can/frames/by-sensor/777")
     body = response.json()
     assert all(f["sensor_id"] == 777 for f in body)
+
+
+def test_can_reset_clears_buffer():
+    from app.can.buffer import buffer
+    buffer.record(0x300, 100, 5.0, "celsius")
+    assert buffer.stats()["frames_received"] >= 1
+    assert client.delete("/can/reset").status_code == 204
+    assert buffer.stats()["frames_received"] == 0
