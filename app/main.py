@@ -25,6 +25,7 @@ from app.tags import registry as tag_registry
 from app.alerts import engine as alert_engine, AlertRule
 from app.commands import queue as command_queue
 from app.audit import log as audit_log
+from app.can.buffer import buffer as can_buffer
 
 FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
 os.makedirs(FIRMWARE_DIR, exist_ok=True)
@@ -596,6 +597,7 @@ def fleet_summary(session: Session = Depends(get_session)):
     reading_count = len(session.exec(select(Reading)).all())
     groups = tag_registry.get_groups()
     active = alert_engine.active()
+    can = can_buffer.stats()
     return {
         "sensors": sensor_count,
         "readings": reading_count,
@@ -603,6 +605,8 @@ def fleet_summary(session: Session = Depends(get_session)):
         "group_names": list(groups.keys()),
         "active_alerts": len(active),
         "firmware_latest": firmware_tracker.latest().get("version", ""),
+        "can_frames_received": can["frames_received"],
+        "can_errors": can["errors"],
     }
 
 
@@ -871,6 +875,38 @@ def find_duplicate_sensors(session: Session = Depends(get_session)):
     for s in sensors:
         by_name.setdefault(s.name, []).append({"id": s.id, "location": s.location})
     return {name: ids for name, ids in by_name.items() if len(ids) > 1}
+
+
+@app.get("/can/stats")
+def can_stats():
+    """CAN receiver stats: frames received, errors, per-sensor breakdown."""
+    return can_buffer.stats()
+
+
+@app.get("/can/frames/recent")
+def can_frames_recent(limit: int = 50):
+    """Recent CAN frames seen by the gateway."""
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    return can_buffer.recent(limit)
+
+
+@app.get("/can/frames/by-sensor/{sensor_id}")
+def can_frames_by_sensor(sensor_id: int, limit: int = 50):
+    """Recent CAN frames received for a specific sensor."""
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    all_frames = can_buffer.recent(500)
+    out = [f for f in all_frames if f["sensor_id"] == sensor_id][:limit]
+    return out
+
+
+@app.delete("/can/reset", status_code=204)
+def can_reset():
+    """Admin: clear the CAN frame buffer and stats counters."""
+    can_buffer.reset()
+    audit_log.record("can.reset", "buffer", {})
+    return None
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)

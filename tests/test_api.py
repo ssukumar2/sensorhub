@@ -1080,3 +1080,55 @@ def test_duplicates_finds_matching_names():
     body = response.json()
     assert "dup-name-aaa" in body
     assert len(body["dup-name-aaa"]) >= 2
+
+
+def test_can_stats_shape():
+    response = client.get("/can/stats")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("frames_received", "errors", "buffer_size", "per_sensor"):
+        assert k in body
+
+
+def test_can_frames_recent_returns_list():
+    response = client.get("/can/frames/recent")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+def test_can_frames_recent_bad_limit():
+    assert client.get("/can/frames/recent?limit=0").status_code == 400
+    assert client.get("/can/frames/recent?limit=9999").status_code == 400
+
+
+def test_can_buffer_records_frames():
+    from app.can.buffer import buffer
+    buffer.record(0x101, 42, 22.5, "celsius")
+    response = client.get("/can/frames/recent?limit=10")
+    body = response.json()
+    matched = [f for f in body if f["sensor_id"] == 42 and f["value"] == 22.5]
+    assert matched
+
+
+def test_fleet_summary_includes_can():
+    response = client.get("/fleet/summary")
+    body = response.json()
+    assert "can_frames_received" in body
+    assert "can_errors" in body
+
+
+def test_can_frames_by_sensor_filters():
+    from app.can.buffer import buffer
+    buffer.record(0x200, 777, 99.0, "celsius")
+    buffer.record(0x201, 888, 11.0, "celsius")
+    response = client.get("/can/frames/by-sensor/777")
+    body = response.json()
+    assert all(f["sensor_id"] == 777 for f in body)
+
+
+def test_can_reset_clears_buffer():
+    from app.can.buffer import buffer
+    buffer.record(0x300, 100, 5.0, "celsius")
+    assert buffer.stats()["frames_received"] >= 1
+    assert client.delete("/can/reset").status_code == 204
+    assert buffer.stats()["frames_received"] == 0

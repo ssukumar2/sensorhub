@@ -8,6 +8,7 @@ import logging
 from sqlmodel import Session
 from app.database import engine, init_db
 from app.models import Reading, Sensor
+from app.can.buffer import buffer
 
 log = logging.getLogger("sensorhub.can")
 
@@ -59,7 +60,9 @@ def main(interface: str = "vcan0"):
             reading = decode_frame(data)
         except ValueError as e:
             log.warning("bad frame on 0x%X: %s", can_id, e)
+            buffer.record_error()
             continue
+        buffer.record(can_id, reading["sensor_id"], reading["value"], reading["unit"])
 
         with Session(engine) as session:
             sensor = session.get(Sensor, reading["sensor_id"])

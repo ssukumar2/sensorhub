@@ -172,13 +172,12 @@ int main(int argc, char* argv[])
             {
                 ++count;
                 MetricsCollector::instance().record_success();
-                std::cout << "[" << count << "] CAN 0x" << std::hex << can_id
-                          << std::dec << " " << t << " c" << std::endl;
+                Logger::instance().info("CAN 0x" + std::to_string(can_id) + " sent " + std::to_string(t) + " c");
             }
             else
             {
                 MetricsCollector::instance().record_failure();
-                std::cerr << "CAN send failed" << std::endl;
+                Logger::instance().error("CAN send failed");
             }
 
             for (int i = 0; i < interval && SignalHandler::instance().keep_running(); ++i)
