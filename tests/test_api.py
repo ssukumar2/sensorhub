@@ -1221,3 +1221,12 @@ def test_anomalies_not_enough_data():
 def test_anomalies_bad_window():
     reg = client.post("/sensors", json={"name": "anom-bad", "location": "lab"}).json()
     assert client.get(f"/sensors/{reg['id']}/anomalies?window=1").status_code == 400
+
+
+def test_fleet_health_shape():
+    response = client.get("/fleet/health")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("total", "active_count", "active_pct", "fw_uptodate_pct", "status"):
+        assert k in body
+    assert body["status"] in ("healthy", "degraded", "unhealthy", "empty")

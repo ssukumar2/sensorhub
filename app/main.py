@@ -1015,6 +1015,43 @@ def sensor_anomalies(sensor_id: int, window: int = 100, sigma: float = 3.0,
     }
 
 
+@app.get("/fleet/health")
+def fleet_health(session: Session = Depends(get_session)):
+    """High-level fleet health score and breakdown."""
+    from datetime import datetime as _dt, timedelta
+    cutoff = _dt.utcnow() - timedelta(minutes=10)
+    sensors = session.exec(select(Sensor)).all()
+    total = len(sensors)
+    if total == 0:
+        return {"total": 0, "active_pct": 0, "fw_uptodate_pct": 0, "status": "empty"}
+    active = 0
+    for s in sensors:
+        last = session.exec(
+            select(Reading).where(Reading.sensor_id == s.id)
+            .order_by(Reading.id.desc()).limit(1)
+        ).first()
+        if last and last.recorded_at and last.recorded_at >= cutoff:
+            active += 1
+    latest_fw = firmware_tracker.latest().get("version", "")
+    uptodate = sum(1 for fw in firmware_tracker.get_all() if fw.version == latest_fw) if latest_fw else 0
+    fw_pct = (uptodate / total) * 100 if latest_fw else 0
+    active_pct = (active / total) * 100
+    if active_pct >= 90 and fw_pct >= 80:
+        status = "healthy"
+    elif active_pct >= 50:
+        status = "degraded"
+    else:
+        status = "unhealthy"
+    return {
+        "total": total,
+        "active_count": active,
+        "active_pct": round(active_pct, 1),
+        "fw_uptodate_count": uptodate,
+        "fw_uptodate_pct": round(fw_pct, 1),
+        "status": status,
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
