@@ -1230,3 +1230,18 @@ def test_fleet_health_shape():
     for k in ("total", "active_count", "active_pct", "fw_uptodate_pct", "status"):
         assert k in body
     assert body["status"] in ("healthy", "degraded", "unhealthy", "empty")
+
+
+def test_export_csv_returns_csv():
+    reg = client.post("/sensors", json={"name": "csv-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 11.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/export.csv")
+    assert response.status_code == 200
+    assert "text/csv" in response.headers["content-type"]
+    text = response.text
+    assert "id,sensor_id,value,unit,recorded_at" in text
+    assert "11.5" in text
+
+
+def test_export_csv_unknown_sensor():
+    assert client.get("/sensors/99999/export.csv").status_code == 404

@@ -1052,6 +1052,32 @@ def fleet_health(session: Session = Depends(get_session)):
     }
 
 
+@app.get("/sensors/{sensor_id}/export.csv")
+def export_readings_csv(sensor_id: int, limit: int = 1000, session: Session = Depends(get_session)):
+    """Stream readings as CSV for download."""
+    if limit < 1 or limit > 100000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id).limit(limit)
+    ).all()
+    from io import StringIO
+    buf = StringIO()
+    buf.write("id,sensor_id,value,unit,recorded_at\n")
+    for r in rows:
+        ts = r.recorded_at.isoformat() if r.recorded_at else ""
+        buf.write(f"{r.id},{r.sensor_id},{r.value},{r.unit},{ts}\n")
+    from fastapi.responses import Response
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="sensor-{sensor_id}.csv"'},
+    )
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
