@@ -1106,6 +1106,18 @@ def export_all_readings_csv(
     )
 
 
+@app.post("/commands/{cmd_id}/cancel")
+def cancel_command(cmd_id: str):
+    """Cancel a pending command before delivery."""
+    if not command_queue.cancel(cmd_id):
+        cmd = command_queue.get(cmd_id)
+        if cmd is None:
+            raise HTTPException(status_code=404, detail="command not found")
+        raise HTTPException(status_code=409, detail=f"cannot cancel command in status: {cmd.status}")
+    audit_log.record("command.cancel", cmd_id, {})
+    return {"id": cmd_id, "status": "cancelled"}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

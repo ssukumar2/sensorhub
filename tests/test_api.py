@@ -1258,3 +1258,27 @@ def test_export_all_csv_with_filter():
 
 def test_export_all_csv_bad_limit():
     assert client.get("/readings/export.csv?limit=0").status_code == 400
+
+
+def test_command_cancel_pending():
+    reg = client.post("/sensors", json={"name": "cancel-test", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/commands?type=will-cancel")
+    cmd_id = response.json()["id"]
+    cancel = client.post(f"/commands/{cmd_id}/cancel")
+    assert cancel.status_code == 200
+    history = client.get(f"/sensors/{reg['id']}/commands/history").json()
+    matched = [c for c in history if c["id"] == cmd_id]
+    assert matched and matched[0]["status"] == "cancelled"
+
+
+def test_command_cancel_unknown():
+    assert client.post("/commands/no-such-cmd/cancel").status_code == 404
+
+
+def test_command_cancel_already_delivered():
+    reg = client.post("/sensors", json={"name": "cancel-late", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/commands?type=late-cancel")
+    cmd_id = response.json()["id"]
+    client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]})
+    cancel = client.post(f"/commands/{cmd_id}/cancel")
+    assert cancel.status_code == 409
