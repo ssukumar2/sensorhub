@@ -1078,6 +1078,34 @@ def export_readings_csv(sensor_id: int, limit: int = 1000, session: Session = De
     )
 
 
+@app.get("/readings/export.csv")
+def export_all_readings_csv(
+    sensor_id: Optional[int] = None,
+    limit: int = 10000,
+    session: Session = Depends(get_session),
+):
+    """Export readings as CSV. Optionally filter by sensor_id."""
+    if limit < 1 or limit > 100000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100000")
+    statement = select(Reading, Sensor).join(Sensor, Sensor.id == Reading.sensor_id)
+    if sensor_id is not None:
+        statement = statement.where(Reading.sensor_id == sensor_id)
+    statement = statement.order_by(Reading.id).limit(limit)
+    rows = session.exec(statement).all()
+    from io import StringIO
+    buf = StringIO()
+    buf.write("id,sensor_id,sensor_name,value,unit,recorded_at\n")
+    for r, sensor in rows:
+        ts = r.recorded_at.isoformat() if r.recorded_at else ""
+        buf.write(f"{r.id},{r.sensor_id},{sensor.name},{r.value},{r.unit},{ts}\n")
+    from fastapi.responses import Response
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="readings.csv"'},
+    )
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

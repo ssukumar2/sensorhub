@@ -1245,3 +1245,16 @@ def test_export_csv_returns_csv():
 
 def test_export_csv_unknown_sensor():
     assert client.get("/sensors/99999/export.csv").status_code == 404
+
+
+def test_export_all_csv_with_filter():
+    reg = client.post("/sensors", json={"name": "all-csv", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 7.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/readings/export.csv?sensor_id={reg['id']}")
+    assert response.status_code == 200
+    assert "sensor_name" in response.text
+    assert "all-csv" in response.text
+
+
+def test_export_all_csv_bad_limit():
+    assert client.get("/readings/export.csv?limit=0").status_code == 400
