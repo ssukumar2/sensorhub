@@ -935,6 +935,29 @@ def last_value(sensor_id: int, session: Session = Depends(get_session)):
     return {"sensor_id": sensor_id, "value": row.value, "unit": row.unit}
 
 
+@app.get("/sensors/{sensor_id}/rate")
+def sensor_rate(sensor_id: int, minutes: int = 5, session: Session = Depends(get_session)):
+    """Return readings-per-minute for a sensor over last N minutes."""
+    if minutes < 1 or minutes > 1440:
+        raise HTTPException(status_code=400, detail="minutes must be between 1 and 1440")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    from datetime import datetime as _dt, timedelta
+    cutoff = _dt.utcnow() - timedelta(minutes=minutes)
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .where(Reading.recorded_at >= cutoff)
+    ).all()
+    count = len(rows)
+    return {
+        "sensor_id": sensor_id,
+        "count": count,
+        "window_minutes": minutes,
+        "rate_per_minute": round(count / minutes, 3),
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

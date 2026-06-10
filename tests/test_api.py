@@ -1164,3 +1164,19 @@ def test_last_value_null_when_empty():
     response = client.get(f"/sensors/{reg['id']}/value/last")
     body = response.json()
     assert body["value"] is None
+
+
+def test_sensor_rate_calculates():
+    reg = client.post("/sensors", json={"name": "rate-test", "location": "lab"}).json()
+    for v in (1.0, 2.0, 3.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/rate?minutes=5")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 3
+    assert body["window_minutes"] == 5
+
+
+def test_sensor_rate_bad_minutes():
+    reg = client.post("/sensors", json={"name": "rate-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/rate?minutes=0").status_code == 400
