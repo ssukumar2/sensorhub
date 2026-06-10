@@ -981,6 +981,40 @@ def detect_stuck_sensor(sensor_id: int, samples: int = 10, session: Session = De
     }
 
 
+@app.get("/sensors/{sensor_id}/anomalies")
+def sensor_anomalies(sensor_id: int, window: int = 100, sigma: float = 3.0,
+                      session: Session = Depends(get_session)):
+    """Find readings more than `sigma` standard deviations from window mean."""
+    if window < 10 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 10 and 5000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    if len(rows) < 10:
+        return {"sensor_id": sensor_id, "anomalies": [], "window": len(rows), "reason": "not enough data"}
+    values = [r.value for r in rows]
+    mean = sum(values) / len(values)
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    stddev = variance ** 0.5
+    threshold = sigma * stddev
+    anomalies = [
+        {"id": r.id, "value": r.value, "deviation": round(abs(r.value - mean), 4)}
+        for r in rows if abs(r.value - mean) > threshold
+    ]
+    return {
+        "sensor_id": sensor_id,
+        "window": len(rows),
+        "mean": round(mean, 4),
+        "stddev": round(stddev, 4),
+        "sigma": sigma,
+        "anomalies": anomalies,
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

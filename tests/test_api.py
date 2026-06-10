@@ -1198,3 +1198,26 @@ def test_stuck_sensor_not_stuck_when_varying():
     response = client.get(f"/sensors/{reg['id']}/stuck?samples=5")
     body = response.json()
     assert body["stuck"] is False
+
+
+def test_anomalies_finds_outliers():
+    reg = client.post("/sensors", json={"name": "anom-test", "location": "lab"}).json()
+    for _ in range(15):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": 20.0, "unit": "celsius"}, reg["api_key"])
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 200.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/anomalies?window=20&sigma=2")
+    body = response.json()
+    assert any(a["value"] == 200.0 for a in body["anomalies"])
+
+
+def test_anomalies_not_enough_data():
+    reg = client.post("/sensors", json={"name": "anom-tiny", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/anomalies?window=100")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["anomalies"] == []
+
+
+def test_anomalies_bad_window():
+    reg = client.post("/sensors", json={"name": "anom-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/anomalies?window=1").status_code == 400
