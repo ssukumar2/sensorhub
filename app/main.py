@@ -958,6 +958,29 @@ def sensor_rate(sensor_id: int, minutes: int = 5, session: Session = Depends(get
     }
 
 
+@app.get("/sensors/{sensor_id}/stuck")
+def detect_stuck_sensor(sensor_id: int, samples: int = 10, session: Session = Depends(get_session)):
+    """Check if the last N readings are all identical (suspected stuck sensor)."""
+    if samples < 2 or samples > 100:
+        raise HTTPException(status_code=400, detail="samples must be between 2 and 100")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(samples)
+    ).all()
+    if len(rows) < samples:
+        return {"sensor_id": sensor_id, "stuck": False, "samples": len(rows), "reason": "not enough data"}
+    values = {r.value for r in rows}
+    return {
+        "sensor_id": sensor_id,
+        "stuck": len(values) == 1,
+        "samples": samples,
+        "unique_values": len(values),
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

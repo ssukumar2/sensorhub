@@ -1180,3 +1180,21 @@ def test_sensor_rate_calculates():
 def test_sensor_rate_bad_minutes():
     reg = client.post("/sensors", json={"name": "rate-bad", "location": "lab"}).json()
     assert client.get(f"/sensors/{reg['id']}/rate?minutes=0").status_code == 400
+
+
+def test_stuck_sensor_flags_constant():
+    reg = client.post("/sensors", json={"name": "stuck-yes", "location": "lab"}).json()
+    for _ in range(5):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": 20.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/stuck?samples=5")
+    body = response.json()
+    assert body["stuck"] is True
+
+
+def test_stuck_sensor_not_stuck_when_varying():
+    reg = client.post("/sensors", json={"name": "stuck-no", "location": "lab"}).json()
+    for v in (1.0, 2.0, 3.0, 4.0, 5.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/stuck?samples=5")
+    body = response.json()
+    assert body["stuck"] is False
