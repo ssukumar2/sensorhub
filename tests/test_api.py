@@ -1148,3 +1148,19 @@ def test_readings_since_returns_newer():
 
 def test_readings_since_bad_limit():
     assert client.get("/readings/since/0?limit=0").status_code == 400
+
+
+def test_last_value_returns_value():
+    reg = client.post("/sensors", json={"name": "lv-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 42.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/value/last")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["value"] == 42.5
+
+
+def test_last_value_null_when_empty():
+    reg = client.post("/sensors", json={"name": "lv-empty", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/value/last")
+    body = response.json()
+    assert body["value"] is None

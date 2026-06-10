@@ -920,6 +920,21 @@ def readings_since(last_id: int, limit: int = 100, session: Session = Depends(ge
     return rows
 
 
+@app.get("/sensors/{sensor_id}/value/last")
+def last_value(sensor_id: int, session: Session = Depends(get_session)):
+    """Return only the last value and unit for a sensor (compact)."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    row = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if row is None:
+        return {"sensor_id": sensor_id, "value": None, "unit": None}
+    return {"sensor_id": sensor_id, "value": row.value, "unit": row.unit}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
