@@ -1132,3 +1132,19 @@ def test_can_reset_clears_buffer():
     assert buffer.stats()["frames_received"] >= 1
     assert client.delete("/can/reset").status_code == 204
     assert buffer.stats()["frames_received"] == 0
+
+
+def test_readings_since_returns_newer():
+    reg = client.post("/sensors", json={"name": "since-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    first = client.get("/readings/since/0?limit=1000").json()
+    last_id = max((r["id"] for r in first), default=0)
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 2.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/readings/since/{last_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert all(r["id"] > last_id for r in body)
+
+
+def test_readings_since_bad_limit():
+    assert client.get("/readings/since/0?limit=0").status_code == 400

@@ -909,6 +909,17 @@ def can_reset():
     return None
 
 
+@app.get("/readings/since/{last_id}")
+def readings_since(last_id: int, limit: int = 100, session: Session = Depends(get_session)):
+    """Return readings with id > last_id, oldest first."""
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    rows = session.exec(
+        select(Reading).where(Reading.id > last_id).order_by(Reading.id).limit(limit)
+    ).all()
+    return rows
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
