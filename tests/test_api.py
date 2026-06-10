@@ -1132,3 +1132,153 @@ def test_can_reset_clears_buffer():
     assert buffer.stats()["frames_received"] >= 1
     assert client.delete("/can/reset").status_code == 204
     assert buffer.stats()["frames_received"] == 0
+
+
+def test_readings_since_returns_newer():
+    reg = client.post("/sensors", json={"name": "since-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    first = client.get("/readings/since/0?limit=1000").json()
+    last_id = max((r["id"] for r in first), default=0)
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 2.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/readings/since/{last_id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert all(r["id"] > last_id for r in body)
+
+
+def test_readings_since_bad_limit():
+    assert client.get("/readings/since/0?limit=0").status_code == 400
+
+
+def test_last_value_returns_value():
+    reg = client.post("/sensors", json={"name": "lv-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 42.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/value/last")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["value"] == 42.5
+
+
+def test_last_value_null_when_empty():
+    reg = client.post("/sensors", json={"name": "lv-empty", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/value/last")
+    body = response.json()
+    assert body["value"] is None
+
+
+def test_sensor_rate_calculates():
+    reg = client.post("/sensors", json={"name": "rate-test", "location": "lab"}).json()
+    for v in (1.0, 2.0, 3.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/rate?minutes=5")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 3
+    assert body["window_minutes"] == 5
+
+
+def test_sensor_rate_bad_minutes():
+    reg = client.post("/sensors", json={"name": "rate-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/rate?minutes=0").status_code == 400
+
+
+def test_stuck_sensor_flags_constant():
+    reg = client.post("/sensors", json={"name": "stuck-yes", "location": "lab"}).json()
+    for _ in range(5):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": 20.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/stuck?samples=5")
+    body = response.json()
+    assert body["stuck"] is True
+
+
+def test_stuck_sensor_not_stuck_when_varying():
+    reg = client.post("/sensors", json={"name": "stuck-no", "location": "lab"}).json()
+    for v in (1.0, 2.0, 3.0, 4.0, 5.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/stuck?samples=5")
+    body = response.json()
+    assert body["stuck"] is False
+
+
+def test_anomalies_finds_outliers():
+    reg = client.post("/sensors", json={"name": "anom-test", "location": "lab"}).json()
+    for _ in range(15):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": 20.0, "unit": "celsius"}, reg["api_key"])
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 200.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/anomalies?window=20&sigma=2")
+    body = response.json()
+    assert any(a["value"] == 200.0 for a in body["anomalies"])
+
+
+def test_anomalies_not_enough_data():
+    reg = client.post("/sensors", json={"name": "anom-tiny", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/anomalies?window=100")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["anomalies"] == []
+
+
+def test_anomalies_bad_window():
+    reg = client.post("/sensors", json={"name": "anom-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/anomalies?window=1").status_code == 400
+
+
+def test_fleet_health_shape():
+    response = client.get("/fleet/health")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("total", "active_count", "active_pct", "fw_uptodate_pct", "status"):
+        assert k in body
+    assert body["status"] in ("healthy", "degraded", "unhealthy", "empty")
+
+
+def test_export_csv_returns_csv():
+    reg = client.post("/sensors", json={"name": "csv-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 11.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/export.csv")
+    assert response.status_code == 200
+    assert "text/csv" in response.headers["content-type"]
+    text = response.text
+    assert "id,sensor_id,value,unit,recorded_at" in text
+    assert "11.5" in text
+
+
+def test_export_csv_unknown_sensor():
+    assert client.get("/sensors/99999/export.csv").status_code == 404
+
+
+def test_export_all_csv_with_filter():
+    reg = client.post("/sensors", json={"name": "all-csv", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 7.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/readings/export.csv?sensor_id={reg['id']}")
+    assert response.status_code == 200
+    assert "sensor_name" in response.text
+    assert "all-csv" in response.text
+
+
+def test_export_all_csv_bad_limit():
+    assert client.get("/readings/export.csv?limit=0").status_code == 400
+
+
+def test_command_cancel_pending():
+    reg = client.post("/sensors", json={"name": "cancel-test", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/commands?type=will-cancel")
+    cmd_id = response.json()["id"]
+    cancel = client.post(f"/commands/{cmd_id}/cancel")
+    assert cancel.status_code == 200
+    history = client.get(f"/sensors/{reg['id']}/commands/history").json()
+    matched = [c for c in history if c["id"] == cmd_id]
+    assert matched and matched[0]["status"] == "cancelled"
+
+
+def test_command_cancel_unknown():
+    assert client.post("/commands/no-such-cmd/cancel").status_code == 404
+
+
+def test_command_cancel_already_delivered():
+    reg = client.post("/sensors", json={"name": "cancel-late", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/commands?type=late-cancel")
+    cmd_id = response.json()["id"]
+    client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]})
+    cancel = client.post(f"/commands/{cmd_id}/cancel")
+    assert cancel.status_code == 409

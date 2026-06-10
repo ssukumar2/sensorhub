@@ -909,6 +909,215 @@ def can_reset():
     return None
 
 
+@app.get("/readings/since/{last_id}")
+def readings_since(last_id: int, limit: int = 100, session: Session = Depends(get_session)):
+    """Return readings with id > last_id, oldest first."""
+    if limit < 1 or limit > 1000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    rows = session.exec(
+        select(Reading).where(Reading.id > last_id).order_by(Reading.id).limit(limit)
+    ).all()
+    return rows
+
+
+@app.get("/sensors/{sensor_id}/value/last")
+def last_value(sensor_id: int, session: Session = Depends(get_session)):
+    """Return only the last value and unit for a sensor (compact)."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    row = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if row is None:
+        return {"sensor_id": sensor_id, "value": None, "unit": None}
+    return {"sensor_id": sensor_id, "value": row.value, "unit": row.unit}
+
+
+@app.get("/sensors/{sensor_id}/rate")
+def sensor_rate(sensor_id: int, minutes: int = 5, session: Session = Depends(get_session)):
+    """Return readings-per-minute for a sensor over last N minutes."""
+    if minutes < 1 or minutes > 1440:
+        raise HTTPException(status_code=400, detail="minutes must be between 1 and 1440")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    from datetime import datetime as _dt, timedelta
+    cutoff = _dt.utcnow() - timedelta(minutes=minutes)
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .where(Reading.recorded_at >= cutoff)
+    ).all()
+    count = len(rows)
+    return {
+        "sensor_id": sensor_id,
+        "count": count,
+        "window_minutes": minutes,
+        "rate_per_minute": round(count / minutes, 3),
+    }
+
+
+@app.get("/sensors/{sensor_id}/stuck")
+def detect_stuck_sensor(sensor_id: int, samples: int = 10, session: Session = Depends(get_session)):
+    """Check if the last N readings are all identical (suspected stuck sensor)."""
+    if samples < 2 or samples > 100:
+        raise HTTPException(status_code=400, detail="samples must be between 2 and 100")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(samples)
+    ).all()
+    if len(rows) < samples:
+        return {"sensor_id": sensor_id, "stuck": False, "samples": len(rows), "reason": "not enough data"}
+    values = {r.value for r in rows}
+    return {
+        "sensor_id": sensor_id,
+        "stuck": len(values) == 1,
+        "samples": samples,
+        "unique_values": len(values),
+    }
+
+
+@app.get("/sensors/{sensor_id}/anomalies")
+def sensor_anomalies(sensor_id: int, window: int = 100, sigma: float = 3.0,
+                      session: Session = Depends(get_session)):
+    """Find readings more than `sigma` standard deviations from window mean."""
+    if window < 10 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 10 and 5000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    if len(rows) < 10:
+        return {"sensor_id": sensor_id, "anomalies": [], "window": len(rows), "reason": "not enough data"}
+    values = [r.value for r in rows]
+    mean = sum(values) / len(values)
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    stddev = variance ** 0.5
+    threshold = sigma * stddev
+    anomalies = [
+        {"id": r.id, "value": r.value, "deviation": round(abs(r.value - mean), 4)}
+        for r in rows if abs(r.value - mean) > threshold
+    ]
+    return {
+        "sensor_id": sensor_id,
+        "window": len(rows),
+        "mean": round(mean, 4),
+        "stddev": round(stddev, 4),
+        "sigma": sigma,
+        "anomalies": anomalies,
+    }
+
+
+@app.get("/fleet/health")
+def fleet_health(session: Session = Depends(get_session)):
+    """High-level fleet health score and breakdown."""
+    from datetime import datetime as _dt, timedelta
+    cutoff = _dt.utcnow() - timedelta(minutes=10)
+    sensors = session.exec(select(Sensor)).all()
+    total = len(sensors)
+    if total == 0:
+        return {"total": 0, "active_pct": 0, "fw_uptodate_pct": 0, "status": "empty"}
+    active = 0
+    for s in sensors:
+        last = session.exec(
+            select(Reading).where(Reading.sensor_id == s.id)
+            .order_by(Reading.id.desc()).limit(1)
+        ).first()
+        if last and last.recorded_at and last.recorded_at >= cutoff:
+            active += 1
+    latest_fw = firmware_tracker.latest().get("version", "")
+    uptodate = sum(1 for fw in firmware_tracker.get_all() if fw.version == latest_fw) if latest_fw else 0
+    fw_pct = (uptodate / total) * 100 if latest_fw else 0
+    active_pct = (active / total) * 100
+    if active_pct >= 90 and fw_pct >= 80:
+        status = "healthy"
+    elif active_pct >= 50:
+        status = "degraded"
+    else:
+        status = "unhealthy"
+    return {
+        "total": total,
+        "active_count": active,
+        "active_pct": round(active_pct, 1),
+        "fw_uptodate_count": uptodate,
+        "fw_uptodate_pct": round(fw_pct, 1),
+        "status": status,
+    }
+
+
+@app.get("/sensors/{sensor_id}/export.csv")
+def export_readings_csv(sensor_id: int, limit: int = 1000, session: Session = Depends(get_session)):
+    """Stream readings as CSV for download."""
+    if limit < 1 or limit > 100000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id).limit(limit)
+    ).all()
+    from io import StringIO
+    buf = StringIO()
+    buf.write("id,sensor_id,value,unit,recorded_at\n")
+    for r in rows:
+        ts = r.recorded_at.isoformat() if r.recorded_at else ""
+        buf.write(f"{r.id},{r.sensor_id},{r.value},{r.unit},{ts}\n")
+    from fastapi.responses import Response
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="sensor-{sensor_id}.csv"'},
+    )
+
+
+@app.get("/readings/export.csv")
+def export_all_readings_csv(
+    sensor_id: Optional[int] = None,
+    limit: int = 10000,
+    session: Session = Depends(get_session),
+):
+    """Export readings as CSV. Optionally filter by sensor_id."""
+    if limit < 1 or limit > 100000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100000")
+    statement = select(Reading, Sensor).join(Sensor, Sensor.id == Reading.sensor_id)
+    if sensor_id is not None:
+        statement = statement.where(Reading.sensor_id == sensor_id)
+    statement = statement.order_by(Reading.id).limit(limit)
+    rows = session.exec(statement).all()
+    from io import StringIO
+    buf = StringIO()
+    buf.write("id,sensor_id,sensor_name,value,unit,recorded_at\n")
+    for r, sensor in rows:
+        ts = r.recorded_at.isoformat() if r.recorded_at else ""
+        buf.write(f"{r.id},{r.sensor_id},{sensor.name},{r.value},{r.unit},{ts}\n")
+    from fastapi.responses import Response
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="readings.csv"'},
+    )
+
+
+@app.post("/commands/{cmd_id}/cancel")
+def cancel_command(cmd_id: str):
+    """Cancel a pending command before delivery."""
+    if not command_queue.cancel(cmd_id):
+        cmd = command_queue.get(cmd_id)
+        if cmd is None:
+            raise HTTPException(status_code=404, detail="command not found")
+        raise HTTPException(status_code=409, detail=f"cannot cancel command in status: {cmd.status}")
+    audit_log.record("command.cancel", cmd_id, {})
+    return {"id": cmd_id, "status": "cancelled"}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

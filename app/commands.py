@@ -38,6 +38,13 @@ class CommandQueue:
             c.status = "delivered"
             c.delivered_at = datetime.utcnow()
 
+    def cancel(self, cmd_id: str) -> bool:
+        c = self._by_id.get(cmd_id)
+        if c and c.status == "pending":
+            c.status = "cancelled"
+            return True
+        return False
+
     def ack(self, cmd_id: str, result: str = ""):
         c = self._by_id.get(cmd_id)
         if c:
