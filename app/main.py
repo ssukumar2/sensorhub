@@ -1323,6 +1323,17 @@ def get_last_seen(sensor_id: int, session: Session = Depends(get_session)):
     return {"sensor_id": sensor_id, "last_seen": ts.isoformat() if ts else None}
 
 
+@app.post("/sensors/{sensor_id}/restart")
+def restart_sensor(sensor_id: int, session: Session = Depends(get_session)):
+    """Admin convenience: enqueue a 'restart' command for a device."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    cmd = command_queue.enqueue(sensor_id, "restart", {})
+    audit_log.record("sensor.restart", f"sensor:{sensor_id}", {"command_id": cmd.id})
+    return {"sensor_id": sensor_id, "command_id": cmd.id, "type": "restart"}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

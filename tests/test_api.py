@@ -1418,3 +1418,17 @@ def test_last_seen_null_when_unseen():
     reg = client.post("/sensors", json={"name": "alive-never", "location": "lab"}).json()
     body = client.get(f"/sensors/{reg['id']}/last-seen").json()
     assert body["last_seen"] is None
+
+
+def test_sensor_restart_enqueues_command():
+    reg = client.post("/sensors", json={"name": "restart-test", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/restart")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["type"] == "restart"
+    pending = client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]}).json()
+    assert any(c["id"] == body["command_id"] and c["type"] == "restart" for c in pending)
+
+
+def test_sensor_restart_unknown():
+    assert client.post("/sensors/99999/restart").status_code == 404
