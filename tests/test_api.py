@@ -1282,3 +1282,153 @@ def test_command_cancel_already_delivered():
     client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]})
     cancel = client.post(f"/commands/{cmd_id}/cancel")
     assert cancel.status_code == 409
+
+
+def test_percentiles_returns_values():
+    reg = client.post("/sensors", json={"name": "pct-test", "location": "lab"}).json()
+    for v in range(1, 21):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/percentiles?window=20")
+    body = response.json()
+    assert body["count"] == 20
+    assert body["p50"] >= 10 and body["p50"] <= 11
+    assert body["p99"] >= 19
+
+
+def test_percentiles_empty_sensor():
+    reg = client.post("/sensors", json={"name": "pct-empty", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/percentiles")
+    body = response.json()
+    assert body["count"] == 0 and body["p50"] is None
+
+
+def test_percentiles_bad_window():
+    reg = client.post("/sensors", json={"name": "pct-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/percentiles?window=1").status_code == 400
+
+
+def test_trend_detects_rising():
+    reg = client.post("/sensors", json={"name": "trend-up", "location": "lab"}).json()
+    for v in range(1, 11):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/trend?window=10")
+    body = response.json()
+    assert body["direction"] == "rising"
+    assert body["slope"] > 0
+
+
+def test_trend_detects_falling():
+    reg = client.post("/sensors", json={"name": "trend-down", "location": "lab"}).json()
+    for v in range(10, 0, -1):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/trend?window=10")
+    body = response.json()
+    assert body["direction"] == "falling"
+
+
+def test_trend_bad_window():
+    reg = client.post("/sensors", json={"name": "trend-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/trend?window=1").status_code == 400
+
+
+def test_threshold_violations_counts_above():
+    reg = client.post("/sensors", json={"name": "tv-test", "location": "lab"}).json()
+    for v in (5.0, 50.0, 100.0, 25.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/threshold-violations?max_value=30")
+    body = response.json()
+    assert body["violations"] == 2
+    assert all(i["kind"] == "above" for i in body["items"])
+
+
+def test_threshold_violations_requires_bound():
+    reg = client.post("/sensors", json={"name": "tv-nobound", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/threshold-violations").status_code == 400
+
+
+def test_sensor_note_add_and_list():
+    reg = client.post("/sensors", json={"name": "note-test", "location": "lab"}).json()
+    response = client.post(
+        f"/sensors/{reg['id']}/notes?text=replaced+battery+on+2026-05-20",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    notes = client.get(f"/sensors/{reg['id']}/notes").json()
+    assert any("battery" in n["text"] for n in notes)
+
+
+def test_sensor_note_requires_auth():
+    reg = client.post("/sensors", json={"name": "note-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/notes?text=hi", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_sensor_note_validation():
+    reg = client.post("/sensors", json={"name": "note-bad", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/notes?text=", headers={"x-api-key": reg["api_key"]}).status_code == 400
+
+
+def test_distribution_returns_buckets():
+    reg = client.post("/sensors", json={"name": "dist-test", "location": "lab"}).json()
+    for v in range(1, 11):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/readings/distribution/{reg['id']}?bins=5&window=10")
+    body = response.json()
+    assert body["count"] == 10
+    assert len(body["buckets"]) == 5
+    assert sum(b["count"] for b in body["buckets"]) == 10
+
+
+def test_distribution_bad_bins():
+    reg = client.post("/sensors", json={"name": "dist-bad", "location": "lab"}).json()
+    assert client.get(f"/readings/distribution/{reg['id']}?bins=1").status_code == 400
+
+
+def test_sensor_copy_creates_new():
+    reg = client.post("/sensors", json={"name": "to-copy", "location": "site-A"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=group&value=copy-grp", headers={"x-api-key": reg["api_key"]})
+    response = client.post(f"/sensors/{reg['id']}/copy?new_name=copied-sensor")
+    assert response.status_code == 201
+    copy = response.json()
+    assert copy["name"] == "copied-sensor"
+    assert copy["location"] == "site-A"
+    assert copy["id"] != reg["id"]
+    copy_tags = client.get(f"/sensors/{copy['id']}/tags").json()
+    assert any(t["key"] == "group" and t["value"] == "copy-grp" for t in copy_tags)
+
+
+def test_sensor_copy_unknown():
+    assert client.post("/sensors/99999/copy").status_code == 404
+
+
+def test_keep_alive_updates_last_seen():
+    reg = client.post("/sensors", json={"name": "alive-test", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/keep-alive", headers={"x-api-key": reg["api_key"]})
+    assert response.status_code == 200
+    last_seen = response.json()["last_seen"]
+    fetched = client.get(f"/sensors/{reg['id']}/last-seen").json()
+    assert fetched["last_seen"] == last_seen
+
+
+def test_keep_alive_requires_auth():
+    reg = client.post("/sensors", json={"name": "alive-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/keep-alive", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_last_seen_null_when_unseen():
+    reg = client.post("/sensors", json={"name": "alive-never", "location": "lab"}).json()
+    body = client.get(f"/sensors/{reg['id']}/last-seen").json()
+    assert body["last_seen"] is None
+
+
+def test_sensor_restart_enqueues_command():
+    reg = client.post("/sensors", json={"name": "restart-test", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/restart")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["type"] == "restart"
+    pending = client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]}).json()
+    assert any(c["id"] == body["command_id"] and c["type"] == "restart" for c in pending)
+
+
+def test_sensor_restart_unknown():
+    assert client.post("/sensors/99999/restart").status_code == 404

@@ -26,6 +26,7 @@ from app.alerts import engine as alert_engine, AlertRule
 from app.commands import queue as command_queue
 from app.audit import log as audit_log
 from app.can.buffer import buffer as can_buffer
+from app.notes import registry as notes_registry
 
 FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
 os.makedirs(FIRMWARE_DIR, exist_ok=True)
@@ -38,6 +39,7 @@ import time as _time
 
 _start_time = _time.time()
 _request_count = 0
+_last_seen: dict = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1116,6 +1118,220 @@ def cancel_command(cmd_id: str):
         raise HTTPException(status_code=409, detail=f"cannot cancel command in status: {cmd.status}")
     audit_log.record("command.cancel", cmd_id, {})
     return {"id": cmd_id, "status": "cancelled"}
+
+
+@app.get("/sensors/{sensor_id}/percentiles")
+def sensor_percentiles(sensor_id: int, window: int = 100, session: Session = Depends(get_session)):
+    """Return p50/p90/p95/p99 of last N readings."""
+    if window < 4 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 4 and 5000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    if not rows:
+        return {"sensor_id": sensor_id, "count": 0, "p50": None, "p90": None, "p95": None, "p99": None}
+    values = sorted(r.value for r in rows)
+    n = len(values)
+    def pct(p):
+        idx = min(n - 1, int(round((p / 100.0) * (n - 1))))
+        return round(values[idx], 4)
+    return {
+        "sensor_id": sensor_id, "count": n,
+        "p50": pct(50), "p90": pct(90), "p95": pct(95), "p99": pct(99),
+    }
+
+
+@app.get("/sensors/{sensor_id}/trend")
+def sensor_trend(sensor_id: int, window: int = 50, session: Session = Depends(get_session)):
+    """Linear regression slope of last N readings: positive = rising, negative = falling."""
+    if window < 3 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 3 and 5000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    rows = list(reversed(rows))
+    if len(rows) < 3:
+        return {"sensor_id": sensor_id, "count": len(rows), "slope": None, "direction": "unknown"}
+    n = len(rows)
+    xs = list(range(n))
+    ys = [r.value for r in rows]
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    num = sum((xs[i] - mean_x) * (ys[i] - mean_y) for i in range(n))
+    den = sum((xs[i] - mean_x) ** 2 for i in range(n))
+    slope = num / den if den else 0
+    if slope > 0.01:
+        direction = "rising"
+    elif slope < -0.01:
+        direction = "falling"
+    else:
+        direction = "flat"
+    return {"sensor_id": sensor_id, "count": n, "slope": round(slope, 4), "direction": direction}
+
+
+@app.get("/sensors/{sensor_id}/threshold-violations")
+def threshold_violations(
+    sensor_id: int,
+    min_value: Optional[float] = None,
+    max_value: Optional[float] = None,
+    window: int = 1000,
+    session: Session = Depends(get_session),
+):
+    """Count and return readings outside provided bounds in last N readings."""
+    if window < 1 or window > 10000:
+        raise HTTPException(status_code=400, detail="window must be between 1 and 10000")
+    if min_value is None and max_value is None:
+        raise HTTPException(status_code=400, detail="provide min_value and/or max_value")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    violations = []
+    for r in rows:
+        kind = None
+        if min_value is not None and r.value < min_value:
+            kind = "below"
+        elif max_value is not None and r.value > max_value:
+            kind = "above"
+        if kind:
+            violations.append({"id": r.id, "value": r.value, "kind": kind})
+    return {
+        "sensor_id": sensor_id, "checked": len(rows),
+        "violations": len(violations), "items": violations[:50],
+    }
+
+
+@app.post("/sensors/{sensor_id}/notes")
+def add_sensor_note(
+    sensor_id: int,
+    text: str,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Attach a freeform note to a sensor."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    if not text or len(text) > 1000:
+        raise HTTPException(status_code=400, detail="text required, max 1000 chars")
+    notes_registry.add(sensor_id, text)
+    return {"sensor_id": sensor_id, "notes": notes_registry.list_for(sensor_id)}
+
+
+@app.get("/sensors/{sensor_id}/notes")
+def list_sensor_notes(sensor_id: int, session: Session = Depends(get_session)):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    return notes_registry.list_for(sensor_id)
+
+
+@app.get("/readings/distribution/{sensor_id}")
+def readings_distribution(
+    sensor_id: int,
+    bins: int = 10,
+    window: int = 500,
+    session: Session = Depends(get_session),
+):
+    """Histogram of last N readings split into `bins` buckets."""
+    if bins < 2 or bins > 100:
+        raise HTTPException(status_code=400, detail="bins must be between 2 and 100")
+    if window < bins or window > 10000:
+        raise HTTPException(status_code=400, detail="window must be >= bins and <= 10000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    if not rows:
+        return {"sensor_id": sensor_id, "count": 0, "buckets": []}
+    values = [r.value for r in rows]
+    lo, hi = min(values), max(values)
+    if lo == hi:
+        return {"sensor_id": sensor_id, "count": len(values), "buckets": [{"from": lo, "to": hi, "count": len(values)}]}
+    width = (hi - lo) / bins
+    counts = [0] * bins
+    for v in values:
+        idx = min(bins - 1, int((v - lo) / width))
+        counts[idx] += 1
+    buckets = [
+        {"from": round(lo + i * width, 4), "to": round(lo + (i + 1) * width, 4), "count": counts[i]}
+        for i in range(bins)
+    ]
+    return {"sensor_id": sensor_id, "count": len(values), "buckets": buckets}
+
+
+@app.post("/sensors/{sensor_id}/copy", status_code=201)
+def copy_sensor(
+    sensor_id: int,
+    new_name: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    """Duplicate a sensor: same location and tags, new api key, new id."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    name = new_name or (sensor.name + "-copy")
+    new_sensor = Sensor(name=name, location=sensor.location)
+    session.add(new_sensor)
+    session.commit()
+    session.refresh(new_sensor)
+    for tag in tag_registry.get_tags(sensor_id):
+        tag_registry.add_tag(new_sensor.id, tag.key, tag.value)
+    audit_log.record("sensor.copy", f"from:{sensor_id} to:{new_sensor.id}", {})
+    return new_sensor
+
+
+@app.post("/sensors/{sensor_id}/keep-alive")
+def keep_alive(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Device heartbeat. Records last-seen without inserting a reading."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    from datetime import datetime as _dt
+    _last_seen[sensor_id] = _dt.utcnow()
+    return {"sensor_id": sensor_id, "last_seen": _last_seen[sensor_id].isoformat()}
+
+
+@app.get("/sensors/{sensor_id}/last-seen")
+def get_last_seen(sensor_id: int, session: Session = Depends(get_session)):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    ts = _last_seen.get(sensor_id)
+    return {"sensor_id": sensor_id, "last_seen": ts.isoformat() if ts else None}
+
+
+@app.post("/sensors/{sensor_id}/restart")
+def restart_sensor(sensor_id: int, session: Session = Depends(get_session)):
+    """Admin convenience: enqueue a 'restart' command for a device."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    cmd = command_queue.enqueue(sensor_id, "restart", {})
+    audit_log.record("sensor.restart", f"sensor:{sensor_id}", {"command_id": cmd.id})
+    return {"sensor_id": sensor_id, "command_id": cmd.id, "type": "restart"}
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
