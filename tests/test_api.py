@@ -1365,3 +1365,19 @@ def test_sensor_note_requires_auth():
 def test_sensor_note_validation():
     reg = client.post("/sensors", json={"name": "note-bad", "location": "lab"}).json()
     assert client.post(f"/sensors/{reg['id']}/notes?text=", headers={"x-api-key": reg["api_key"]}).status_code == 400
+
+
+def test_distribution_returns_buckets():
+    reg = client.post("/sensors", json={"name": "dist-test", "location": "lab"}).json()
+    for v in range(1, 11):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/readings/distribution/{reg['id']}?bins=5&window=10")
+    body = response.json()
+    assert body["count"] == 10
+    assert len(body["buckets"]) == 5
+    assert sum(b["count"] for b in body["buckets"]) == 10
+
+
+def test_distribution_bad_bins():
+    reg = client.post("/sensors", json={"name": "dist-bad", "location": "lab"}).json()
+    assert client.get(f"/readings/distribution/{reg['id']}?bins=1").status_code == 400

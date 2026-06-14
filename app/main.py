@@ -1238,6 +1238,43 @@ def list_sensor_notes(sensor_id: int, session: Session = Depends(get_session)):
     return notes_registry.list_for(sensor_id)
 
 
+@app.get("/readings/distribution/{sensor_id}")
+def readings_distribution(
+    sensor_id: int,
+    bins: int = 10,
+    window: int = 500,
+    session: Session = Depends(get_session),
+):
+    """Histogram of last N readings split into `bins` buckets."""
+    if bins < 2 or bins > 100:
+        raise HTTPException(status_code=400, detail="bins must be between 2 and 100")
+    if window < bins or window > 10000:
+        raise HTTPException(status_code=400, detail="window must be >= bins and <= 10000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    if not rows:
+        return {"sensor_id": sensor_id, "count": 0, "buckets": []}
+    values = [r.value for r in rows]
+    lo, hi = min(values), max(values)
+    if lo == hi:
+        return {"sensor_id": sensor_id, "count": len(values), "buckets": [{"from": lo, "to": hi, "count": len(values)}]}
+    width = (hi - lo) / bins
+    counts = [0] * bins
+    for v in values:
+        idx = min(bins - 1, int((v - lo) / width))
+        counts[idx] += 1
+    buckets = [
+        {"from": round(lo + i * width, 4), "to": round(lo + (i + 1) * width, 4), "count": counts[i]}
+        for i in range(bins)
+    ]
+    return {"sensor_id": sensor_id, "count": len(values), "buckets": buckets}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
