@@ -1344,3 +1344,24 @@ def test_threshold_violations_counts_above():
 def test_threshold_violations_requires_bound():
     reg = client.post("/sensors", json={"name": "tv-nobound", "location": "lab"}).json()
     assert client.get(f"/sensors/{reg['id']}/threshold-violations").status_code == 400
+
+
+def test_sensor_note_add_and_list():
+    reg = client.post("/sensors", json={"name": "note-test", "location": "lab"}).json()
+    response = client.post(
+        f"/sensors/{reg['id']}/notes?text=replaced+battery+on+2026-05-20",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    notes = client.get(f"/sensors/{reg['id']}/notes").json()
+    assert any("battery" in n["text"] for n in notes)
+
+
+def test_sensor_note_requires_auth():
+    reg = client.post("/sensors", json={"name": "note-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/notes?text=hi", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_sensor_note_validation():
+    reg = client.post("/sensors", json={"name": "note-bad", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/notes?text=", headers={"x-api-key": reg["api_key"]}).status_code == 400

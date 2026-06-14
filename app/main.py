@@ -26,6 +26,7 @@ from app.alerts import engine as alert_engine, AlertRule
 from app.commands import queue as command_queue
 from app.audit import log as audit_log
 from app.can.buffer import buffer as can_buffer
+from app.notes import registry as notes_registry
 
 FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
 os.makedirs(FIRMWARE_DIR, exist_ok=True)
@@ -1208,6 +1209,33 @@ def threshold_violations(
         "sensor_id": sensor_id, "checked": len(rows),
         "violations": len(violations), "items": violations[:50],
     }
+
+
+@app.post("/sensors/{sensor_id}/notes")
+def add_sensor_note(
+    sensor_id: int,
+    text: str,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Attach a freeform note to a sensor."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    if not text or len(text) > 1000:
+        raise HTTPException(status_code=400, detail="text required, max 1000 chars")
+    notes_registry.add(sensor_id, text)
+    return {"sensor_id": sensor_id, "notes": notes_registry.list_for(sensor_id)}
+
+
+@app.get("/sensors/{sensor_id}/notes")
+def list_sensor_notes(sensor_id: int, session: Session = Depends(get_session)):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    return notes_registry.list_for(sensor_id)
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
