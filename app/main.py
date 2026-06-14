@@ -1275,6 +1275,27 @@ def readings_distribution(
     return {"sensor_id": sensor_id, "count": len(values), "buckets": buckets}
 
 
+@app.post("/sensors/{sensor_id}/copy", status_code=201)
+def copy_sensor(
+    sensor_id: int,
+    new_name: Optional[str] = None,
+    session: Session = Depends(get_session),
+):
+    """Duplicate a sensor: same location and tags, new api key, new id."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    name = new_name or (sensor.name + "-copy")
+    new_sensor = Sensor(name=name, location=sensor.location)
+    session.add(new_sensor)
+    session.commit()
+    session.refresh(new_sensor)
+    for tag in tag_registry.get_tags(sensor_id):
+        tag_registry.add_tag(new_sensor.id, tag.key, tag.value)
+    audit_log.record("sensor.copy", f"from:{sensor_id} to:{new_sensor.id}", {})
+    return new_sensor
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

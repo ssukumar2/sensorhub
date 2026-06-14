@@ -1381,3 +1381,20 @@ def test_distribution_returns_buckets():
 def test_distribution_bad_bins():
     reg = client.post("/sensors", json={"name": "dist-bad", "location": "lab"}).json()
     assert client.get(f"/readings/distribution/{reg['id']}?bins=1").status_code == 400
+
+
+def test_sensor_copy_creates_new():
+    reg = client.post("/sensors", json={"name": "to-copy", "location": "site-A"}).json()
+    client.post(f"/sensors/{reg['id']}/tags?key=group&value=copy-grp", headers={"x-api-key": reg["api_key"]})
+    response = client.post(f"/sensors/{reg['id']}/copy?new_name=copied-sensor")
+    assert response.status_code == 201
+    copy = response.json()
+    assert copy["name"] == "copied-sensor"
+    assert copy["location"] == "site-A"
+    assert copy["id"] != reg["id"]
+    copy_tags = client.get(f"/sensors/{copy['id']}/tags").json()
+    assert any(t["key"] == "group" and t["value"] == "copy-grp" for t in copy_tags)
+
+
+def test_sensor_copy_unknown():
+    assert client.post("/sensors/99999/copy").status_code == 404
