@@ -1118,6 +1118,31 @@ def cancel_command(cmd_id: str):
     return {"id": cmd_id, "status": "cancelled"}
 
 
+@app.get("/sensors/{sensor_id}/percentiles")
+def sensor_percentiles(sensor_id: int, window: int = 100, session: Session = Depends(get_session)):
+    """Return p50/p90/p95/p99 of last N readings."""
+    if window < 4 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 4 and 5000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    if not rows:
+        return {"sensor_id": sensor_id, "count": 0, "p50": None, "p90": None, "p95": None, "p99": None}
+    values = sorted(r.value for r in rows)
+    n = len(values)
+    def pct(p):
+        idx = min(n - 1, int(round((p / 100.0) * (n - 1))))
+        return round(values[idx], 4)
+    return {
+        "sensor_id": sensor_id, "count": n,
+        "p50": pct(50), "p90": pct(90), "p95": pct(95), "p99": pct(99),
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

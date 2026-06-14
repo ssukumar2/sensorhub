@@ -1282,3 +1282,26 @@ def test_command_cancel_already_delivered():
     client.get(f"/sensors/{reg['id']}/commands/pending", headers={"x-api-key": reg["api_key"]})
     cancel = client.post(f"/commands/{cmd_id}/cancel")
     assert cancel.status_code == 409
+
+
+def test_percentiles_returns_values():
+    reg = client.post("/sensors", json={"name": "pct-test", "location": "lab"}).json()
+    for v in range(1, 21):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/percentiles?window=20")
+    body = response.json()
+    assert body["count"] == 20
+    assert body["p50"] >= 10 and body["p50"] <= 11
+    assert body["p99"] >= 19
+
+
+def test_percentiles_empty_sensor():
+    reg = client.post("/sensors", json={"name": "pct-empty", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/percentiles")
+    body = response.json()
+    assert body["count"] == 0 and body["p50"] is None
+
+
+def test_percentiles_bad_window():
+    reg = client.post("/sensors", json={"name": "pct-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/percentiles?window=1").status_code == 400
