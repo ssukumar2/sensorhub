@@ -1305,3 +1305,27 @@ def test_percentiles_empty_sensor():
 def test_percentiles_bad_window():
     reg = client.post("/sensors", json={"name": "pct-bad", "location": "lab"}).json()
     assert client.get(f"/sensors/{reg['id']}/percentiles?window=1").status_code == 400
+
+
+def test_trend_detects_rising():
+    reg = client.post("/sensors", json={"name": "trend-up", "location": "lab"}).json()
+    for v in range(1, 11):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/trend?window=10")
+    body = response.json()
+    assert body["direction"] == "rising"
+    assert body["slope"] > 0
+
+
+def test_trend_detects_falling():
+    reg = client.post("/sensors", json={"name": "trend-down", "location": "lab"}).json()
+    for v in range(10, 0, -1):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/trend?window=10")
+    body = response.json()
+    assert body["direction"] == "falling"
+
+
+def test_trend_bad_window():
+    reg = client.post("/sensors", json={"name": "trend-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/trend?window=1").status_code == 400

@@ -1143,6 +1143,38 @@ def sensor_percentiles(sensor_id: int, window: int = 100, session: Session = Dep
     }
 
 
+@app.get("/sensors/{sensor_id}/trend")
+def sensor_trend(sensor_id: int, window: int = 50, session: Session = Depends(get_session)):
+    """Linear regression slope of last N readings: positive = rising, negative = falling."""
+    if window < 3 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 3 and 5000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    rows = list(reversed(rows))
+    if len(rows) < 3:
+        return {"sensor_id": sensor_id, "count": len(rows), "slope": None, "direction": "unknown"}
+    n = len(rows)
+    xs = list(range(n))
+    ys = [r.value for r in rows]
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    num = sum((xs[i] - mean_x) * (ys[i] - mean_y) for i in range(n))
+    den = sum((xs[i] - mean_x) ** 2 for i in range(n))
+    slope = num / den if den else 0
+    if slope > 0.01:
+        direction = "rising"
+    elif slope < -0.01:
+        direction = "falling"
+    else:
+        direction = "flat"
+    return {"sensor_id": sensor_id, "count": n, "slope": round(slope, 4), "direction": direction}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
