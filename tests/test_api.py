@@ -1329,3 +1329,18 @@ def test_trend_detects_falling():
 def test_trend_bad_window():
     reg = client.post("/sensors", json={"name": "trend-bad", "location": "lab"}).json()
     assert client.get(f"/sensors/{reg['id']}/trend?window=1").status_code == 400
+
+
+def test_threshold_violations_counts_above():
+    reg = client.post("/sensors", json={"name": "tv-test", "location": "lab"}).json()
+    for v in (5.0, 50.0, 100.0, 25.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/threshold-violations?max_value=30")
+    body = response.json()
+    assert body["violations"] == 2
+    assert all(i["kind"] == "above" for i in body["items"])
+
+
+def test_threshold_violations_requires_bound():
+    reg = client.post("/sensors", json={"name": "tv-nobound", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/threshold-violations").status_code == 400

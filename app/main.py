@@ -1175,6 +1175,41 @@ def sensor_trend(sensor_id: int, window: int = 50, session: Session = Depends(ge
     return {"sensor_id": sensor_id, "count": n, "slope": round(slope, 4), "direction": direction}
 
 
+@app.get("/sensors/{sensor_id}/threshold-violations")
+def threshold_violations(
+    sensor_id: int,
+    min_value: Optional[float] = None,
+    max_value: Optional[float] = None,
+    window: int = 1000,
+    session: Session = Depends(get_session),
+):
+    """Count and return readings outside provided bounds in last N readings."""
+    if window < 1 or window > 10000:
+        raise HTTPException(status_code=400, detail="window must be between 1 and 10000")
+    if min_value is None and max_value is None:
+        raise HTTPException(status_code=400, detail="provide min_value and/or max_value")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(window)
+    ).all()
+    violations = []
+    for r in rows:
+        kind = None
+        if min_value is not None and r.value < min_value:
+            kind = "below"
+        elif max_value is not None and r.value > max_value:
+            kind = "above"
+        if kind:
+            violations.append({"id": r.id, "value": r.value, "kind": kind})
+    return {
+        "sensor_id": sensor_id, "checked": len(rows),
+        "violations": len(violations), "items": violations[:50],
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
