@@ -39,6 +39,7 @@ import time as _time
 
 _start_time = _time.time()
 _request_count = 0
+_last_seen: dict = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1294,6 +1295,32 @@ def copy_sensor(
         tag_registry.add_tag(new_sensor.id, tag.key, tag.value)
     audit_log.record("sensor.copy", f"from:{sensor_id} to:{new_sensor.id}", {})
     return new_sensor
+
+
+@app.post("/sensors/{sensor_id}/keep-alive")
+def keep_alive(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Device heartbeat. Records last-seen without inserting a reading."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    from datetime import datetime as _dt
+    _last_seen[sensor_id] = _dt.utcnow()
+    return {"sensor_id": sensor_id, "last_seen": _last_seen[sensor_id].isoformat()}
+
+
+@app.get("/sensors/{sensor_id}/last-seen")
+def get_last_seen(sensor_id: int, session: Session = Depends(get_session)):
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    ts = _last_seen.get(sensor_id)
+    return {"sensor_id": sensor_id, "last_seen": ts.isoformat() if ts else None}
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)

@@ -1398,3 +1398,23 @@ def test_sensor_copy_creates_new():
 
 def test_sensor_copy_unknown():
     assert client.post("/sensors/99999/copy").status_code == 404
+
+
+def test_keep_alive_updates_last_seen():
+    reg = client.post("/sensors", json={"name": "alive-test", "location": "lab"}).json()
+    response = client.post(f"/sensors/{reg['id']}/keep-alive", headers={"x-api-key": reg["api_key"]})
+    assert response.status_code == 200
+    last_seen = response.json()["last_seen"]
+    fetched = client.get(f"/sensors/{reg['id']}/last-seen").json()
+    assert fetched["last_seen"] == last_seen
+
+
+def test_keep_alive_requires_auth():
+    reg = client.post("/sensors", json={"name": "alive-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/keep-alive", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_last_seen_null_when_unseen():
+    reg = client.post("/sensors", json={"name": "alive-never", "location": "lab"}).json()
+    body = client.get(f"/sensors/{reg['id']}/last-seen").json()
+    assert body["last_seen"] is None
