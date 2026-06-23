@@ -1432,3 +1432,19 @@ def test_sensor_restart_enqueues_command():
 
 def test_sensor_restart_unknown():
     assert client.post("/sensors/99999/restart").status_code == 404
+
+
+def test_udp_stats_shape():
+    response = client.get("/udp/stats")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("packets", "errors", "bytes_received", "last_packet_at", "per_sensor"):
+        assert k in body
+
+
+def test_udp_stats_records_packet():
+    from app.net.udp_receiver import stats
+    stats.record_packet(64, 999)
+    body = client.get("/udp/stats").json()
+    assert body["packets"] >= 1
+    assert "999" in body["per_sensor"] or 999 in body["per_sensor"]

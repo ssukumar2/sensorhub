@@ -26,6 +26,7 @@ from app.alerts import engine as alert_engine, AlertRule
 from app.commands import queue as command_queue
 from app.audit import log as audit_log
 from app.can.buffer import buffer as can_buffer
+from app.net.udp_receiver import stats as udp_stats
 from app.notes import registry as notes_registry
 
 FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
@@ -1332,6 +1333,12 @@ def restart_sensor(sensor_id: int, session: Session = Depends(get_session)):
     cmd = command_queue.enqueue(sensor_id, "restart", {})
     audit_log.record("sensor.restart", f"sensor:{sensor_id}", {"command_id": cmd.id})
     return {"sensor_id": sensor_id, "command_id": cmd.id, "type": "restart"}
+
+
+@app.get("/udp/stats")
+def get_udp_stats():
+    """UDP receiver stats: packets, errors, bytes, last-seen, per-sensor counts."""
+    return udp_stats.snapshot()
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
