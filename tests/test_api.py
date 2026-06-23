@@ -1464,3 +1464,9 @@ def test_tcp_stats_shape():
     body = response.json()
     for k in ("connections_opened", "active_connections", "readings_received", "errors"):
         assert k in body
+
+
+def test_fleet_summary_includes_udp_tcp():
+    body = client.get("/fleet/summary").json()
+    for k in ("udp_packets", "tcp_active_connections", "tcp_readings_received"):
+        assert k in body

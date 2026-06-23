@@ -611,6 +611,9 @@ def fleet_summary(session: Session = Depends(get_session)):
         "firmware_latest": firmware_tracker.latest().get("version", ""),
         "can_frames_received": can["frames_received"],
         "can_errors": can["errors"],
+        "udp_packets": udp_stats.snapshot()["packets"],
+        "tcp_active_connections": tcp_stats.snapshot()["active_connections"],
+        "tcp_readings_received": tcp_stats.snapshot()["readings_received"],
     }
 
 
