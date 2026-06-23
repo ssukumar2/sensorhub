@@ -1448,3 +1448,11 @@ def test_udp_stats_records_packet():
     body = client.get("/udp/stats").json()
     assert body["packets"] >= 1
     assert "999" in body["per_sensor"] or 999 in body["per_sensor"]
+
+
+def test_tcp_stats_shape():
+    response = client.get("/tcp/stats")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("connections_opened", "active_connections", "readings_received", "errors"):
+        assert k in body
