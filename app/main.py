@@ -1383,6 +1383,22 @@ def net_health():
     }
 
 
+@app.delete("/udp/reset", status_code=204)
+def udp_reset():
+    """Admin: clear UDP receiver counters."""
+    udp_stats.reset()
+    audit_log.record("udp.reset", "counters", {})
+    return None
+
+
+@app.delete("/tcp/reset", status_code=204)
+def tcp_reset():
+    """Admin: clear TCP server counters (does not drop active connections)."""
+    tcp_stats.reset()
+    audit_log.record("tcp.reset", "counters", {})
+    return None
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

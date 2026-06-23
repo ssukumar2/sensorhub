@@ -1484,3 +1484,19 @@ def test_net_health_error_rate():
     stats.record_error()
     body = client.get("/net/health").json()
     assert body["udp"]["error_pct"] >= 0
+
+
+def test_udp_reset_clears_counters():
+    from app.net.udp_receiver import stats
+    stats.record_packet(64, 1)
+    assert stats.snapshot()["packets"] >= 1
+    assert client.delete("/udp/reset").status_code == 204
+    assert stats.snapshot()["packets"] == 0
+
+
+def test_tcp_reset_clears_counters():
+    from app.net.tcp_server import stats
+    stats.conn_opened()
+    stats.reading_ok()
+    assert client.delete("/tcp/reset").status_code == 204
+    assert stats.snapshot()["readings_received"] == 0

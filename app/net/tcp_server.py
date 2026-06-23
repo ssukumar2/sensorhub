@@ -50,6 +50,15 @@ class TcpStats:
         with self._lock:
             self.errors += 1
 
+    def reset(self):
+        with self._lock:
+            self.connections_opened = 0
+            self.connections_closed = 0
+            self.active_connections = 0
+            self.readings_received = 0
+            self.errors = 0
+            self.last_event_at = None
+
     def snapshot(self) -> dict:
         with self._lock:
             return {

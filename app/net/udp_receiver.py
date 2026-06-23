@@ -40,6 +40,14 @@ class UdpStats:
         with self._lock:
             self.errors += 1
 
+    def reset(self):
+        with self._lock:
+            self.packets = 0
+            self.errors = 0
+            self.bytes = 0
+            self.last_packet_at = None
+            self.by_sensor = {}
+
     def snapshot(self) -> dict:
         with self._lock:
             return {
