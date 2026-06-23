@@ -1348,6 +1348,12 @@ def get_tcp_stats():
     return tcp_stats.snapshot()
 
 
+@app.get("/tcp/stats")
+def get_tcp_stats():
+    """TCP server stats: open/closed connections, readings, errors."""
+    return tcp_stats.snapshot()
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

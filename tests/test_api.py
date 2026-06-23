@@ -1456,3 +1456,11 @@ def test_tcp_stats_shape():
     body = response.json()
     for k in ("connections_opened", "active_connections", "readings_received", "errors"):
         assert k in body
+
+
+def test_tcp_stats_shape():
+    response = client.get("/tcp/stats")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("connections_opened", "active_connections", "readings_received", "errors"):
+        assert k in body
