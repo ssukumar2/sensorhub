@@ -26,6 +26,8 @@ from app.alerts import engine as alert_engine, AlertRule
 from app.commands import queue as command_queue
 from app.audit import log as audit_log
 from app.can.buffer import buffer as can_buffer
+from app.net.udp_receiver import stats as udp_stats
+from app.net.tcp_server import stats as tcp_stats
 from app.notes import registry as notes_registry
 
 FIRMWARE_DIR = os.environ.get("FIRMWARE_DIR", "/tmp/sensorhub_firmware")
@@ -609,6 +611,9 @@ def fleet_summary(session: Session = Depends(get_session)):
         "firmware_latest": firmware_tracker.latest().get("version", ""),
         "can_frames_received": can["frames_received"],
         "can_errors": can["errors"],
+        "udp_packets": udp_stats.snapshot()["packets"],
+        "tcp_active_connections": tcp_stats.snapshot()["active_connections"],
+        "tcp_readings_received": tcp_stats.snapshot()["readings_received"],
     }
 
 
@@ -1332,6 +1337,66 @@ def restart_sensor(sensor_id: int, session: Session = Depends(get_session)):
     cmd = command_queue.enqueue(sensor_id, "restart", {})
     audit_log.record("sensor.restart", f"sensor:{sensor_id}", {"command_id": cmd.id})
     return {"sensor_id": sensor_id, "command_id": cmd.id, "type": "restart"}
+
+
+@app.get("/udp/stats")
+def get_udp_stats():
+    """UDP receiver stats: packets, errors, bytes, last-seen, per-sensor counts."""
+    return udp_stats.snapshot()
+
+
+@app.get("/tcp/stats")
+def get_tcp_stats():
+    """TCP server stats: open/closed connections, readings, errors."""
+    return tcp_stats.snapshot()
+
+
+@app.get("/tcp/stats")
+def get_tcp_stats():
+    """TCP server stats: open/closed connections, readings, errors."""
+    return tcp_stats.snapshot()
+
+
+@app.get("/net/health")
+def net_health():
+    """Aggregate transport health: error rate per channel."""
+    can = can_buffer.stats()
+    udp = udp_stats.snapshot()
+    tcp = tcp_stats.snapshot()
+    def err_rate(packets, errors):
+        total = packets + errors
+        return round((errors / total) * 100, 2) if total else 0.0
+    return {
+        "can": {
+            "frames": can["frames_received"], "errors": can["errors"],
+            "error_pct": err_rate(can["frames_received"], can["errors"]),
+        },
+        "udp": {
+            "packets": udp["packets"], "errors": udp["errors"],
+            "error_pct": err_rate(udp["packets"], udp["errors"]),
+        },
+        "tcp": {
+            "readings": tcp["readings_received"], "errors": tcp["errors"],
+            "active": tcp["active_connections"],
+            "error_pct": err_rate(tcp["readings_received"], tcp["errors"]),
+        },
+    }
+
+
+@app.delete("/udp/reset", status_code=204)
+def udp_reset():
+    """Admin: clear UDP receiver counters."""
+    udp_stats.reset()
+    audit_log.record("udp.reset", "counters", {})
+    return None
+
+
+@app.delete("/tcp/reset", status_code=204)
+def tcp_reset():
+    """Admin: clear TCP server counters (does not drop active connections)."""
+    tcp_stats.reset()
+    audit_log.record("tcp.reset", "counters", {})
+    return None
 
 
 @app.get("/sensors/{sensor_id}", response_model=Sensor)

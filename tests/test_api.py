@@ -1432,3 +1432,71 @@ def test_sensor_restart_enqueues_command():
 
 def test_sensor_restart_unknown():
     assert client.post("/sensors/99999/restart").status_code == 404
+
+
+def test_udp_stats_shape():
+    response = client.get("/udp/stats")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("packets", "errors", "bytes_received", "last_packet_at", "per_sensor"):
+        assert k in body
+
+
+def test_udp_stats_records_packet():
+    from app.net.udp_receiver import stats
+    stats.record_packet(64, 999)
+    body = client.get("/udp/stats").json()
+    assert body["packets"] >= 1
+    assert "999" in body["per_sensor"] or 999 in body["per_sensor"]
+
+
+def test_tcp_stats_shape():
+    response = client.get("/tcp/stats")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("connections_opened", "active_connections", "readings_received", "errors"):
+        assert k in body
+
+
+def test_tcp_stats_shape():
+    response = client.get("/tcp/stats")
+    assert response.status_code == 200
+    body = response.json()
+    for k in ("connections_opened", "active_connections", "readings_received", "errors"):
+        assert k in body
+
+
+def test_fleet_summary_includes_udp_tcp():
+    body = client.get("/fleet/summary").json()
+    for k in ("udp_packets", "tcp_active_connections", "tcp_readings_received"):
+        assert k in body
+
+
+def test_net_health_shape():
+    body = client.get("/net/health").json()
+    for transport in ("can", "udp", "tcp"):
+        assert transport in body
+        assert "error_pct" in body[transport]
+
+
+def test_net_health_error_rate():
+    from app.net.udp_receiver import stats
+    stats.record_error()
+    body = client.get("/net/health").json()
+    assert body["udp"]["error_pct"] >= 0
+
+
+def test_udp_reset_clears_counters():
+    from app.net.udp_receiver import stats
+    stats.record_packet(64, 1)
+    assert stats.snapshot()["packets"] >= 1
+    assert client.delete("/udp/reset").status_code == 204
+    assert stats.snapshot()["packets"] == 0
+
+
+def test_tcp_reset_clears_counters():
+    from app.net.tcp_server import stats
+    stats.conn_opened()
+    stats.reading_ok()
+    assert client.delete("/tcp/reset").status_code == 204
+    assert stats.snapshot()["readings_received"] == 0
