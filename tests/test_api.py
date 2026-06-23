@@ -1470,3 +1470,17 @@ def test_fleet_summary_includes_udp_tcp():
     body = client.get("/fleet/summary").json()
     for k in ("udp_packets", "tcp_active_connections", "tcp_readings_received"):
         assert k in body
+
+
+def test_net_health_shape():
+    body = client.get("/net/health").json()
+    for transport in ("can", "udp", "tcp"):
+        assert transport in body
+        assert "error_pct" in body[transport]
+
+
+def test_net_health_error_rate():
+    from app.net.udp_receiver import stats
+    stats.record_error()
+    body = client.get("/net/health").json()
+    assert body["udp"]["error_pct"] >= 0

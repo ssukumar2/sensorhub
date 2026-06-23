@@ -1357,6 +1357,32 @@ def get_tcp_stats():
     return tcp_stats.snapshot()
 
 
+@app.get("/net/health")
+def net_health():
+    """Aggregate transport health: error rate per channel."""
+    can = can_buffer.stats()
+    udp = udp_stats.snapshot()
+    tcp = tcp_stats.snapshot()
+    def err_rate(packets, errors):
+        total = packets + errors
+        return round((errors / total) * 100, 2) if total else 0.0
+    return {
+        "can": {
+            "frames": can["frames_received"], "errors": can["errors"],
+            "error_pct": err_rate(can["frames_received"], can["errors"]),
+        },
+        "udp": {
+            "packets": udp["packets"], "errors": udp["errors"],
+            "error_pct": err_rate(udp["packets"], udp["errors"]),
+        },
+        "tcp": {
+            "readings": tcp["readings_received"], "errors": tcp["errors"],
+            "active": tcp["active_connections"],
+            "error_pct": err_rate(tcp["readings_received"], tcp["errors"]),
+        },
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
