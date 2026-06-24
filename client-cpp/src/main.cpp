@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "logger.hpp"
 #include "signal_handler.hpp"
+#include "connection_manager.hpp"
 #include "metrics.hpp"
 #include "stats_reporter.hpp"
 #include "backend_client.hpp"
@@ -115,6 +116,8 @@ int main(int argc, char* argv[])
     const int interval = cfg.interval_seconds;
 
     CommandClient commands(cfg.backend_url);
+    ConnectionManager conn_mgr(5, 5);
+    conn_mgr.connect(cfg.backend_url);
 
     if (cfg.mode == "mqtt") 
     {
@@ -199,6 +202,15 @@ int main(int argc, char* argv[])
         {
             double t = temp_dist(gen);
             poll_and_handle();
+            if (!conn_mgr.is_connected())
+            {
+                if (!conn_mgr.ensure_connected([&]() { return http.check_health(); }))
+                {
+                    Logger::instance().error("backend unavailable, skipping submission");
+                    MetricsCollector::instance().record_failure();
+                    continue;
+                }
+            }
             RetryPolicy retry(3, 200, 2000);
             bool ok = retry.run([&]() { return http.submit_reading(sensor, t, "celsius"); });
             if (ok) 
