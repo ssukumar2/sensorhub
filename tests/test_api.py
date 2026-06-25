@@ -1542,3 +1542,13 @@ def test_compare_sensors_difference():
 def test_compare_sensors_unknown():
     a = client.post("/sensors", json={"name": "cmp-solo", "location": "lab"}).json()
     assert client.get(f"/sensors/{a['id']}/compare/99999").status_code == 404
+
+
+def test_locations_lists_with_counts():
+    client.post("/sensors", json={"name": "loc-1", "location": "warehouse-z"})
+    client.post("/sensors", json={"name": "loc-2", "location": "warehouse-z"})
+    response = client.get("/locations")
+    assert response.status_code == 200
+    body = response.json()
+    wz = [l for l in body if l["location"] == "warehouse-z"]
+    assert wz and wz[0]["sensor_count"] >= 2

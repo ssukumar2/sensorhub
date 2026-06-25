@@ -1461,6 +1461,16 @@ def compare_sensors(sensor_id: int, other_id: int, window: int = 50,
     }
 
 
+@app.get("/locations")
+def list_locations(session: Session = Depends(get_session)):
+    """List distinct sensor locations with counts."""
+    sensors = session.exec(select(Sensor)).all()
+    counts = {}
+    for s in sensors:
+        counts[s.location] = counts.get(s.location, 0) + 1
+    return [{"location": loc, "sensor_count": n} for loc, n in sorted(counts.items())]
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
