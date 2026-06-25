@@ -1525,3 +1525,20 @@ def test_sensor_health_stuck():
         _signed_post("/readings", {"sensor_id": reg["id"], "value": 20.0, "unit": "celsius"}, reg["api_key"])
     response = client.get(f"/sensors/{reg['id']}/health")
     assert response.json()["stuck"] is True
+
+
+def test_compare_sensors_difference():
+    a = client.post("/sensors", json={"name": "cmp-a", "location": "lab"}).json()
+    b = client.post("/sensors", json={"name": "cmp-b", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": a["id"], "value": 30.0, "unit": "celsius"}, a["api_key"])
+    _signed_post("/readings", {"sensor_id": b["id"], "value": 10.0, "unit": "celsius"}, b["api_key"])
+    response = client.get(f"/sensors/{a['id']}/compare/{b['id']}")
+    body = response.json()
+    assert body["avg_a"] == 30.0
+    assert body["avg_b"] == 10.0
+    assert body["difference"] == 20.0
+
+
+def test_compare_sensors_unknown():
+    a = client.post("/sensors", json={"name": "cmp-solo", "location": "lab"}).json()
+    assert client.get(f"/sensors/{a['id']}/compare/99999").status_code == 404

@@ -1432,6 +1432,35 @@ def sensor_health(sensor_id: int, session: Session = Depends(get_session)):
     }
 
 
+@app.get("/sensors/{sensor_id}/compare/{other_id}")
+def compare_sensors(sensor_id: int, other_id: int, window: int = 50,
+                     session: Session = Depends(get_session)):
+    """Compare recent average values of two sensors."""
+    if window < 1 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 1 and 5000")
+    def avg_for(sid):
+        sensor = session.get(Sensor, sid)
+        if sensor is None:
+            raise HTTPException(status_code=404, detail=f"sensor {sid} not found")
+        rows = session.exec(
+            select(Reading).where(Reading.sensor_id == sid)
+            .order_by(Reading.id.desc()).limit(window)
+        ).all()
+        if not rows:
+            return None
+        return sum(r.value for r in rows) / len(rows)
+    a = avg_for(sensor_id)
+    b = avg_for(other_id)
+    diff = None
+    if a is not None and b is not None:
+        diff = round(a - b, 4)
+    return {
+        "sensor_a": sensor_id, "avg_a": round(a, 4) if a is not None else None,
+        "sensor_b": other_id, "avg_b": round(b, 4) if b is not None else None,
+        "difference": diff,
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
