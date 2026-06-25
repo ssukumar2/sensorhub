@@ -1500,3 +1500,28 @@ def test_tcp_reset_clears_counters():
     stats.reading_ok()
     assert client.delete("/tcp/reset").status_code == 204
     assert stats.snapshot()["readings_received"] == 0
+
+
+def test_sensor_health_no_data():
+    reg = client.post("/sensors", json={"name": "health-nodata", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "no-data"
+
+
+def test_sensor_health_healthy():
+    reg = client.post("/sensors", json={"name": "health-ok", "location": "lab"}).json()
+    for v in (1.0, 2.0, 3.0, 4.0, 5.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/health")
+    body = response.json()
+    assert body["active"] is True
+    assert body["stuck"] is False
+
+
+def test_sensor_health_stuck():
+    reg = client.post("/sensors", json={"name": "health-stuck", "location": "lab"}).json()
+    for _ in range(6):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": 20.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/health")
+    assert response.json()["stuck"] is True

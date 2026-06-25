@@ -1399,6 +1399,39 @@ def tcp_reset():
     return None
 
 
+@app.get("/sensors/{sensor_id}/health")
+def sensor_health(sensor_id: int, session: Session = Depends(get_session)):
+    """Per-sensor health: recency, stuck detection, basic status."""
+    from datetime import datetime as _dt, timedelta
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(10)
+    ).all()
+    if not rows:
+        return {"sensor_id": sensor_id, "status": "no-data", "active": False, "stuck": False}
+    last = rows[0]
+    cutoff = _dt.utcnow() - timedelta(minutes=10)
+    active = bool(last.recorded_at and last.recorded_at >= cutoff)
+    stuck = len({r.value for r in rows}) == 1 and len(rows) >= 5
+    if not active:
+        status = "stale"
+    elif stuck:
+        status = "stuck"
+    else:
+        status = "healthy"
+    return {
+        "sensor_id": sensor_id,
+        "status": status,
+        "active": active,
+        "stuck": stuck,
+        "last_value": last.value,
+        "last_seen": last.recorded_at.isoformat() if last.recorded_at else None,
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
