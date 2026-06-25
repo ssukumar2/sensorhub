@@ -1552,3 +1552,23 @@ def test_locations_lists_with_counts():
     body = response.json()
     wz = [l for l in body if l["location"] == "warehouse-z"]
     assert wz and wz[0]["sensor_count"] >= 2
+
+
+def test_reset_key_changes_key():
+    reg = client.post("/sensors", json={"name": "rotate-key", "location": "lab"}).json()
+    old_key = reg["api_key"]
+    response = client.post(f"/sensors/{reg['id']}/reset-key", headers={"x-api-key": old_key})
+    assert response.status_code == 200
+    new_key = response.json()["api_key"]
+    assert new_key != old_key
+    # old key no longer works
+    bad = _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, old_key)
+    assert bad.status_code == 401
+    # new key works
+    good = _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, new_key)
+    assert good.status_code == 201
+
+
+def test_reset_key_requires_current_key():
+    reg = client.post("/sensors", json={"name": "rotate-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/reset-key", headers={"x-api-key": "wrong"}).status_code == 401

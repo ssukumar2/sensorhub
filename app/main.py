@@ -1471,6 +1471,26 @@ def list_locations(session: Session = Depends(get_session)):
     return [{"location": loc, "sensor_count": n} for loc, n in sorted(counts.items())]
 
 
+@app.post("/sensors/{sensor_id}/reset-key")
+def reset_sensor_key(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Rotate a sensor's API key. Requires the current key."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    sensor.api_key = secrets.token_urlsafe(32)
+    session.add(sensor)
+    session.commit()
+    session.refresh(sensor)
+    audit_log.record("sensor.reset_key", f"sensor:{sensor_id}", {})
+    return {"sensor_id": sensor_id, "api_key": sensor.api_key}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
