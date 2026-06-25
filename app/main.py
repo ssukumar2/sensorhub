@@ -1399,6 +1399,98 @@ def tcp_reset():
     return None
 
 
+@app.get("/sensors/{sensor_id}/health")
+def sensor_health(sensor_id: int, session: Session = Depends(get_session)):
+    """Per-sensor health: recency, stuck detection, basic status."""
+    from datetime import datetime as _dt, timedelta
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(10)
+    ).all()
+    if not rows:
+        return {"sensor_id": sensor_id, "status": "no-data", "active": False, "stuck": False}
+    last = rows[0]
+    cutoff = _dt.utcnow() - timedelta(minutes=10)
+    active = bool(last.recorded_at and last.recorded_at >= cutoff)
+    stuck = len({r.value for r in rows}) == 1 and len(rows) >= 5
+    if not active:
+        status = "stale"
+    elif stuck:
+        status = "stuck"
+    else:
+        status = "healthy"
+    return {
+        "sensor_id": sensor_id,
+        "status": status,
+        "active": active,
+        "stuck": stuck,
+        "last_value": last.value,
+        "last_seen": last.recorded_at.isoformat() if last.recorded_at else None,
+    }
+
+
+@app.get("/sensors/{sensor_id}/compare/{other_id}")
+def compare_sensors(sensor_id: int, other_id: int, window: int = 50,
+                     session: Session = Depends(get_session)):
+    """Compare recent average values of two sensors."""
+    if window < 1 or window > 5000:
+        raise HTTPException(status_code=400, detail="window must be between 1 and 5000")
+    def avg_for(sid):
+        sensor = session.get(Sensor, sid)
+        if sensor is None:
+            raise HTTPException(status_code=404, detail=f"sensor {sid} not found")
+        rows = session.exec(
+            select(Reading).where(Reading.sensor_id == sid)
+            .order_by(Reading.id.desc()).limit(window)
+        ).all()
+        if not rows:
+            return None
+        return sum(r.value for r in rows) / len(rows)
+    a = avg_for(sensor_id)
+    b = avg_for(other_id)
+    diff = None
+    if a is not None and b is not None:
+        diff = round(a - b, 4)
+    return {
+        "sensor_a": sensor_id, "avg_a": round(a, 4) if a is not None else None,
+        "sensor_b": other_id, "avg_b": round(b, 4) if b is not None else None,
+        "difference": diff,
+    }
+
+
+@app.get("/locations")
+def list_locations(session: Session = Depends(get_session)):
+    """List distinct sensor locations with counts."""
+    sensors = session.exec(select(Sensor)).all()
+    counts = {}
+    for s in sensors:
+        counts[s.location] = counts.get(s.location, 0) + 1
+    return [{"location": loc, "sensor_count": n} for loc, n in sorted(counts.items())]
+
+
+@app.post("/sensors/{sensor_id}/reset-key")
+def reset_sensor_key(
+    sensor_id: int,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Rotate a sensor's API key. Requires the current key."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    sensor.api_key = secrets.token_urlsafe(32)
+    session.add(sensor)
+    session.commit()
+    session.refresh(sensor)
+    audit_log.record("sensor.reset_key", f"sensor:{sensor_id}", {})
+    return {"sensor_id": sensor_id, "api_key": sensor.api_key}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

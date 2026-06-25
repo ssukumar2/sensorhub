@@ -1500,3 +1500,75 @@ def test_tcp_reset_clears_counters():
     stats.reading_ok()
     assert client.delete("/tcp/reset").status_code == 204
     assert stats.snapshot()["readings_received"] == 0
+
+
+def test_sensor_health_no_data():
+    reg = client.post("/sensors", json={"name": "health-nodata", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "no-data"
+
+
+def test_sensor_health_healthy():
+    reg = client.post("/sensors", json={"name": "health-ok", "location": "lab"}).json()
+    for v in (1.0, 2.0, 3.0, 4.0, 5.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/health")
+    body = response.json()
+    assert body["active"] is True
+    assert body["stuck"] is False
+
+
+def test_sensor_health_stuck():
+    reg = client.post("/sensors", json={"name": "health-stuck", "location": "lab"}).json()
+    for _ in range(6):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": 20.0, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/health")
+    assert response.json()["stuck"] is True
+
+
+def test_compare_sensors_difference():
+    a = client.post("/sensors", json={"name": "cmp-a", "location": "lab"}).json()
+    b = client.post("/sensors", json={"name": "cmp-b", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": a["id"], "value": 30.0, "unit": "celsius"}, a["api_key"])
+    _signed_post("/readings", {"sensor_id": b["id"], "value": 10.0, "unit": "celsius"}, b["api_key"])
+    response = client.get(f"/sensors/{a['id']}/compare/{b['id']}")
+    body = response.json()
+    assert body["avg_a"] == 30.0
+    assert body["avg_b"] == 10.0
+    assert body["difference"] == 20.0
+
+
+def test_compare_sensors_unknown():
+    a = client.post("/sensors", json={"name": "cmp-solo", "location": "lab"}).json()
+    assert client.get(f"/sensors/{a['id']}/compare/99999").status_code == 404
+
+
+def test_locations_lists_with_counts():
+    client.post("/sensors", json={"name": "loc-1", "location": "warehouse-z"})
+    client.post("/sensors", json={"name": "loc-2", "location": "warehouse-z"})
+    response = client.get("/locations")
+    assert response.status_code == 200
+    body = response.json()
+    wz = [l for l in body if l["location"] == "warehouse-z"]
+    assert wz and wz[0]["sensor_count"] >= 2
+
+
+def test_reset_key_changes_key():
+    reg = client.post("/sensors", json={"name": "rotate-key", "location": "lab"}).json()
+    old_key = reg["api_key"]
+    response = client.post(f"/sensors/{reg['id']}/reset-key", headers={"x-api-key": old_key})
+    assert response.status_code == 200
+    new_key = response.json()["api_key"]
+    assert new_key != old_key
+    # old key no longer works
+    bad = _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, old_key)
+    assert bad.status_code == 401
+    # new key works
+    good = _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, new_key)
+    assert good.status_code == 201
+
+
+def test_reset_key_requires_current_key():
+    reg = client.post("/sensors", json={"name": "rotate-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/reset-key", headers={"x-api-key": "wrong"}).status_code == 401
