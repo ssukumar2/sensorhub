@@ -1598,3 +1598,13 @@ def test_sensor_summary_empty():
 
 def test_sensor_summary_unknown():
     assert client.get("/sensors/99999/summary").status_code == 404
+
+
+def test_latest_per_sensor_includes_all():
+    reg = client.post("/sensors", json={"name": "lps-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 55.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get("/readings/latest-per-sensor")
+    assert response.status_code == 200
+    body = response.json()
+    matched = [r for r in body if r["sensor_id"] == reg["id"]]
+    assert matched and matched[0]["value"] == 55.5

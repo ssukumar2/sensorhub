@@ -1578,6 +1578,26 @@ def sensor_summary(sensor_id: int, session: Session = Depends(get_session)):
     }
 
 
+@app.get("/readings/latest-per-sensor")
+def latest_per_sensor(session: Session = Depends(get_session)):
+    """Return the most recent reading for each sensor (dashboard-friendly)."""
+    sensors = session.exec(select(Sensor)).all()
+    out = []
+    for sensor in sensors:
+        latest = session.exec(
+            select(Reading).where(Reading.sensor_id == sensor.id)
+            .order_by(Reading.id.desc()).limit(1)
+        ).first()
+        out.append({
+            "sensor_id": sensor.id,
+            "name": sensor.name,
+            "value": latest.value if latest else None,
+            "unit": latest.unit if latest else None,
+            "recorded_at": latest.recorded_at.isoformat() if latest and latest.recorded_at else None,
+        })
+    return out
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
