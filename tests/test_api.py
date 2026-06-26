@@ -1625,3 +1625,25 @@ def test_moving_average_computes():
 def test_moving_average_bad_period():
     reg = client.post("/sensors", json={"name": "ma-bad", "location": "lab"}).json()
     assert client.get(f"/sensors/{reg['id']}/moving-average?period=1").status_code == 400
+
+
+def test_rename_sensor_changes_name():
+    reg = client.post("/sensors", json={"name": "old-name", "location": "lab"}).json()
+    response = client.post(
+        f"/sensors/{reg['id']}/rename?name=new-name",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "new-name"
+    fetched = client.get(f"/sensors/{reg['id']}").json()
+    assert fetched["name"] == "new-name"
+
+
+def test_rename_sensor_requires_auth():
+    reg = client.post("/sensors", json={"name": "rn-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/rename?name=x", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_rename_sensor_validation():
+    reg = client.post("/sensors", json={"name": "rn-bad", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/rename?name=", headers={"x-api-key": reg["api_key"]}).status_code == 400

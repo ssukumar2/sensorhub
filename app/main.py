@@ -1622,6 +1622,30 @@ def moving_average(sensor_id: int, period: int = 5, points: int = 20,
     return {"sensor_id": sensor_id, "period": period, "series": out}
 
 
+@app.post("/sensors/{sensor_id}/rename")
+def rename_sensor(
+    sensor_id: int,
+    name: str,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Rename a sensor. Requires the sensor's api key."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    if not name or len(name) > 200:
+        raise HTTPException(status_code=400, detail="name required, max 200 chars")
+    old_name = sensor.name
+    sensor.name = name
+    session.add(sensor)
+    session.commit()
+    session.refresh(sensor)
+    audit_log.record("sensor.rename", f"sensor:{sensor_id}", {"from": old_name, "to": name})
+    return {"sensor_id": sensor_id, "name": sensor.name}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
