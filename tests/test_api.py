@@ -1608,3 +1608,20 @@ def test_latest_per_sensor_includes_all():
     body = response.json()
     matched = [r for r in body if r["sensor_id"] == reg["id"]]
     assert matched and matched[0]["value"] == 55.5
+
+
+def test_moving_average_computes():
+    reg = client.post("/sensors", json={"name": "ma-test", "location": "lab"}).json()
+    for v in range(1, 11):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/moving-average?period=3&points=10")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["period"] == 3
+    assert len(body["series"]) == 8
+    assert body["series"][0]["ma"] == 2.0
+
+
+def test_moving_average_bad_period():
+    reg = client.post("/sensors", json={"name": "ma-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/moving-average?period=1").status_code == 400

@@ -1598,6 +1598,30 @@ def latest_per_sensor(session: Session = Depends(get_session)):
     return out
 
 
+@app.get("/sensors/{sensor_id}/moving-average")
+def moving_average(sensor_id: int, period: int = 5, points: int = 20,
+                   session: Session = Depends(get_session)):
+    """Simple moving average over last N readings with given period."""
+    if period < 2 or period > 100:
+        raise HTTPException(status_code=400, detail="period must be between 2 and 100")
+    if points < period or points > 1000:
+        raise HTTPException(status_code=400, detail="points must be >= period and <= 1000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(points)
+    ).all()
+    rows = list(reversed(rows))
+    values = [r.value for r in rows]
+    out = []
+    for i in range(period - 1, len(values)):
+        window = values[i - period + 1:i + 1]
+        out.append({"index": i, "value": values[i], "ma": round(sum(window) / period, 4)})
+    return {"sensor_id": sensor_id, "period": period, "series": out}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
