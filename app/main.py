@@ -1491,6 +1491,93 @@ def reset_sensor_key(
     return {"sensor_id": sensor_id, "api_key": sensor.api_key}
 
 
+@app.get("/sensors/{sensor_id}/summary")
+def sensor_summary(sensor_id: int, session: Session = Depends(get_session)):
+    """One-call overview: metadata, reading count, latest value, min/max/avg."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+    ).all()
+    latest = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if rows:
+        values = [r.value for r in rows]
+        stats = {"min": min(values), "max": max(values), "avg": round(sum(values)/len(values), 4)}
+    else:
+        stats = {"min": None, "max": None, "avg": None}
+    return {
+        "sensor_id": sensor_id,
+        "name": sensor.name,
+        "location": sensor.location,
+        "reading_count": len(rows),
+        "latest_value": latest.value if latest else None,
+        "latest_unit": latest.unit if latest else None,
+        "stats": stats,
+    }
+
+
+@app.get("/sensors/{sensor_id}/summary")
+def sensor_summary(sensor_id: int, session: Session = Depends(get_session)):
+    """One-call overview: metadata, reading count, latest value, min/max/avg."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+    ).all()
+    latest = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if rows:
+        values = [r.value for r in rows]
+        stats = {"min": min(values), "max": max(values), "avg": round(sum(values)/len(values), 4)}
+    else:
+        stats = {"min": None, "max": None, "avg": None}
+    return {
+        "sensor_id": sensor_id,
+        "name": sensor.name,
+        "location": sensor.location,
+        "reading_count": len(rows),
+        "latest_value": latest.value if latest else None,
+        "latest_unit": latest.unit if latest else None,
+        "stats": stats,
+    }
+
+
+@app.get("/sensors/{sensor_id}/summary")
+def sensor_summary(sensor_id: int, session: Session = Depends(get_session)):
+    """One-call overview: metadata, reading count, latest value, min/max/avg."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+    ).all()
+    latest = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if rows:
+        values = [r.value for r in rows]
+        stats = {"min": min(values), "max": max(values), "avg": round(sum(values)/len(values), 4)}
+    else:
+        stats = {"min": None, "max": None, "avg": None}
+    return {
+        "sensor_id": sensor_id,
+        "name": sensor.name,
+        "location": sensor.location,
+        "reading_count": len(rows),
+        "latest_value": latest.value if latest else None,
+        "latest_unit": latest.unit if latest else None,
+        "stats": stats,
+    }
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

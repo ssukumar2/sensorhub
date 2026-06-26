@@ -1572,3 +1572,29 @@ def test_reset_key_changes_key():
 def test_reset_key_requires_current_key():
     reg = client.post("/sensors", json={"name": "rotate-noauth", "location": "lab"}).json()
     assert client.post(f"/sensors/{reg['id']}/reset-key", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_sensor_summary_full():
+    reg = client.post("/sensors", json={"name": "summ-test", "location": "lab"}).json()
+    for v in (10.0, 20.0, 30.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reading_count"] == 3
+    assert body["latest_value"] == 30.0
+    assert body["stats"]["min"] == 10.0
+    assert body["stats"]["max"] == 30.0
+    assert body["stats"]["avg"] == 20.0
+
+
+def test_sensor_summary_empty():
+    reg = client.post("/sensors", json={"name": "summ-empty", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/summary")
+    body = response.json()
+    assert body["reading_count"] == 0
+    assert body["latest_value"] is None
+
+
+def test_sensor_summary_unknown():
+    assert client.get("/sensors/99999/summary").status_code == 404
