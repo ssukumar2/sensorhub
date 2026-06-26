@@ -1491,6 +1491,161 @@ def reset_sensor_key(
     return {"sensor_id": sensor_id, "api_key": sensor.api_key}
 
 
+@app.get("/sensors/{sensor_id}/summary")
+def sensor_summary(sensor_id: int, session: Session = Depends(get_session)):
+    """One-call overview: metadata, reading count, latest value, min/max/avg."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+    ).all()
+    latest = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if rows:
+        values = [r.value for r in rows]
+        stats = {"min": min(values), "max": max(values), "avg": round(sum(values)/len(values), 4)}
+    else:
+        stats = {"min": None, "max": None, "avg": None}
+    return {
+        "sensor_id": sensor_id,
+        "name": sensor.name,
+        "location": sensor.location,
+        "reading_count": len(rows),
+        "latest_value": latest.value if latest else None,
+        "latest_unit": latest.unit if latest else None,
+        "stats": stats,
+    }
+
+
+@app.get("/sensors/{sensor_id}/summary")
+def sensor_summary(sensor_id: int, session: Session = Depends(get_session)):
+    """One-call overview: metadata, reading count, latest value, min/max/avg."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+    ).all()
+    latest = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if rows:
+        values = [r.value for r in rows]
+        stats = {"min": min(values), "max": max(values), "avg": round(sum(values)/len(values), 4)}
+    else:
+        stats = {"min": None, "max": None, "avg": None}
+    return {
+        "sensor_id": sensor_id,
+        "name": sensor.name,
+        "location": sensor.location,
+        "reading_count": len(rows),
+        "latest_value": latest.value if latest else None,
+        "latest_unit": latest.unit if latest else None,
+        "stats": stats,
+    }
+
+
+@app.get("/sensors/{sensor_id}/summary")
+def sensor_summary(sensor_id: int, session: Session = Depends(get_session)):
+    """One-call overview: metadata, reading count, latest value, min/max/avg."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+    ).all()
+    latest = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(1)
+    ).first()
+    if rows:
+        values = [r.value for r in rows]
+        stats = {"min": min(values), "max": max(values), "avg": round(sum(values)/len(values), 4)}
+    else:
+        stats = {"min": None, "max": None, "avg": None}
+    return {
+        "sensor_id": sensor_id,
+        "name": sensor.name,
+        "location": sensor.location,
+        "reading_count": len(rows),
+        "latest_value": latest.value if latest else None,
+        "latest_unit": latest.unit if latest else None,
+        "stats": stats,
+    }
+
+
+@app.get("/readings/latest-per-sensor")
+def latest_per_sensor(session: Session = Depends(get_session)):
+    """Return the most recent reading for each sensor (dashboard-friendly)."""
+    sensors = session.exec(select(Sensor)).all()
+    out = []
+    for sensor in sensors:
+        latest = session.exec(
+            select(Reading).where(Reading.sensor_id == sensor.id)
+            .order_by(Reading.id.desc()).limit(1)
+        ).first()
+        out.append({
+            "sensor_id": sensor.id,
+            "name": sensor.name,
+            "value": latest.value if latest else None,
+            "unit": latest.unit if latest else None,
+            "recorded_at": latest.recorded_at.isoformat() if latest and latest.recorded_at else None,
+        })
+    return out
+
+
+@app.get("/sensors/{sensor_id}/moving-average")
+def moving_average(sensor_id: int, period: int = 5, points: int = 20,
+                   session: Session = Depends(get_session)):
+    """Simple moving average over last N readings with given period."""
+    if period < 2 or period > 100:
+        raise HTTPException(status_code=400, detail="period must be between 2 and 100")
+    if points < period or points > 1000:
+        raise HTTPException(status_code=400, detail="points must be >= period and <= 1000")
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    rows = session.exec(
+        select(Reading).where(Reading.sensor_id == sensor_id)
+        .order_by(Reading.id.desc()).limit(points)
+    ).all()
+    rows = list(reversed(rows))
+    values = [r.value for r in rows]
+    out = []
+    for i in range(period - 1, len(values)):
+        window = values[i - period + 1:i + 1]
+        out.append({"index": i, "value": values[i], "ma": round(sum(window) / period, 4)})
+    return {"sensor_id": sensor_id, "period": period, "series": out}
+
+
+@app.post("/sensors/{sensor_id}/rename")
+def rename_sensor(
+    sensor_id: int,
+    name: str,
+    x_api_key: str = Header(...),
+    session: Session = Depends(get_session),
+):
+    """Rename a sensor. Requires the sensor's api key."""
+    sensor = session.get(Sensor, sensor_id)
+    if sensor is None:
+        raise HTTPException(status_code=404, detail="sensor not found")
+    if not secrets.compare_digest(sensor.api_key, x_api_key):
+        raise HTTPException(status_code=401, detail="invalid api key")
+    if not name or len(name) > 200:
+        raise HTTPException(status_code=400, detail="name required, max 200 chars")
+    old_name = sensor.name
+    sensor.name = name
+    session.add(sensor)
+    session.commit()
+    session.refresh(sensor)
+    audit_log.record("sensor.rename", f"sensor:{sensor_id}", {"from": old_name, "to": name})
+    return {"sensor_id": sensor_id, "name": sensor.name}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

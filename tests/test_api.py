@@ -1572,3 +1572,78 @@ def test_reset_key_changes_key():
 def test_reset_key_requires_current_key():
     reg = client.post("/sensors", json={"name": "rotate-noauth", "location": "lab"}).json()
     assert client.post(f"/sensors/{reg['id']}/reset-key", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_sensor_summary_full():
+    reg = client.post("/sensors", json={"name": "summ-test", "location": "lab"}).json()
+    for v in (10.0, 20.0, 30.0):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": v, "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/summary")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reading_count"] == 3
+    assert body["latest_value"] == 30.0
+    assert body["stats"]["min"] == 10.0
+    assert body["stats"]["max"] == 30.0
+    assert body["stats"]["avg"] == 20.0
+
+
+def test_sensor_summary_empty():
+    reg = client.post("/sensors", json={"name": "summ-empty", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/summary")
+    body = response.json()
+    assert body["reading_count"] == 0
+    assert body["latest_value"] is None
+
+
+def test_sensor_summary_unknown():
+    assert client.get("/sensors/99999/summary").status_code == 404
+
+
+def test_latest_per_sensor_includes_all():
+    reg = client.post("/sensors", json={"name": "lps-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 55.5, "unit": "celsius"}, reg["api_key"])
+    response = client.get("/readings/latest-per-sensor")
+    assert response.status_code == 200
+    body = response.json()
+    matched = [r for r in body if r["sensor_id"] == reg["id"]]
+    assert matched and matched[0]["value"] == 55.5
+
+
+def test_moving_average_computes():
+    reg = client.post("/sensors", json={"name": "ma-test", "location": "lab"}).json()
+    for v in range(1, 11):
+        _signed_post("/readings", {"sensor_id": reg["id"], "value": float(v), "unit": "celsius"}, reg["api_key"])
+    response = client.get(f"/sensors/{reg['id']}/moving-average?period=3&points=10")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["period"] == 3
+    assert len(body["series"]) == 8
+    assert body["series"][0]["ma"] == 2.0
+
+
+def test_moving_average_bad_period():
+    reg = client.post("/sensors", json={"name": "ma-bad", "location": "lab"}).json()
+    assert client.get(f"/sensors/{reg['id']}/moving-average?period=1").status_code == 400
+
+
+def test_rename_sensor_changes_name():
+    reg = client.post("/sensors", json={"name": "old-name", "location": "lab"}).json()
+    response = client.post(
+        f"/sensors/{reg['id']}/rename?name=new-name",
+        headers={"x-api-key": reg["api_key"]},
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "new-name"
+    fetched = client.get(f"/sensors/{reg['id']}").json()
+    assert fetched["name"] == "new-name"
+
+
+def test_rename_sensor_requires_auth():
+    reg = client.post("/sensors", json={"name": "rn-noauth", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/rename?name=x", headers={"x-api-key": "wrong"}).status_code == 401
+
+
+def test_rename_sensor_validation():
+    reg = client.post("/sensors", json={"name": "rn-bad", "location": "lab"}).json()
+    assert client.post(f"/sensors/{reg['id']}/rename?name=", headers={"x-api-key": reg["api_key"]}).status_code == 400
