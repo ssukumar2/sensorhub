@@ -1660,3 +1660,12 @@ def test_sensor_exists_false():
     response = client.get("/sensors/99999/exists")
     assert response.status_code == 200
     assert response.json()["exists"] is False
+
+
+def test_count_by_location():
+    client.post("/sensors", json={"name": "cbl-1", "location": "depot-x"})
+    client.post("/sensors", json={"name": "cbl-2", "location": "depot-x"})
+    response = client.get("/sensors/count/by-location")
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("depot-x", 0) >= 2

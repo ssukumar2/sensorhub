@@ -1653,6 +1653,16 @@ def sensor_exists(sensor_id: int, session: Session = Depends(get_session)):
     return {"sensor_id": sensor_id, "exists": sensor is not None}
 
 
+@app.get("/sensors/count/by-location")
+def count_by_location(session: Session = Depends(get_session)):
+    """Return a count of sensors per location."""
+    sensors = session.exec(select(Sensor)).all()
+    counts = {}
+    for s in sensors:
+        counts[s.location] = counts.get(s.location, 0) + 1
+    return counts
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""
