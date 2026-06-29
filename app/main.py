@@ -1646,6 +1646,37 @@ def rename_sensor(
     return {"sensor_id": sensor_id, "name": sensor.name}
 
 
+@app.get("/sensors/{sensor_id}/exists")
+def sensor_exists(sensor_id: int, session: Session = Depends(get_session)):
+    """Return whether a sensor exists without raising 404."""
+    sensor = session.get(Sensor, sensor_id)
+    return {"sensor_id": sensor_id, "exists": sensor is not None}
+
+
+@app.get("/sensors/count/by-location")
+def count_by_location(session: Session = Depends(get_session)):
+    """Return a count of sensors per location."""
+    sensors = session.exec(select(Sensor)).all()
+    counts = {}
+    for s in sensors:
+        counts[s.location] = counts.get(s.location, 0) + 1
+    return counts
+
+
+@app.get("/readings/total")
+def readings_total(session: Session = Depends(get_session)):
+    """Return the total number of readings stored across all sensors."""
+    total = len(session.exec(select(Reading)).all())
+    return {"total_readings": total}
+
+
+@app.get("/ping")
+def ping(msg: str = "pong"):
+    """Liveness check that echoes an optional message."""
+    from datetime import datetime as _dt
+    return {"reply": msg, "server_time": _dt.utcnow().isoformat()}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

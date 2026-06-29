@@ -1647,3 +1647,46 @@ def test_rename_sensor_requires_auth():
 def test_rename_sensor_validation():
     reg = client.post("/sensors", json={"name": "rn-bad", "location": "lab"}).json()
     assert client.post(f"/sensors/{reg['id']}/rename?name=", headers={"x-api-key": reg["api_key"]}).status_code == 400
+
+
+def test_sensor_exists_true():
+    reg = client.post("/sensors", json={"name": "exists-yes", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/exists")
+    assert response.status_code == 200
+    assert response.json()["exists"] is True
+
+
+def test_sensor_exists_false():
+    response = client.get("/sensors/99999/exists")
+    assert response.status_code == 200
+    assert response.json()["exists"] is False
+
+
+def test_count_by_location():
+    client.post("/sensors", json={"name": "cbl-1", "location": "depot-x"})
+    client.post("/sensors", json={"name": "cbl-2", "location": "depot-x"})
+    response = client.get("/sensors/count/by-location")
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("depot-x", 0) >= 2
+
+
+def test_readings_total_counts():
+    before = client.get("/readings/total").json()["total_readings"]
+    reg = client.post("/sensors", json={"name": "total-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    after = client.get("/readings/total").json()["total_readings"]
+    assert after >= before + 1
+
+
+def test_ping_default():
+    response = client.get("/ping")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reply"] == "pong"
+    assert "server_time" in body
+
+
+def test_ping_echo():
+    response = client.get("/ping?msg=hello")
+    assert response.json()["reply"] == "hello"
