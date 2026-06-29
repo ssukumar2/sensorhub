@@ -1670,6 +1670,13 @@ def readings_total(session: Session = Depends(get_session)):
     return {"total_readings": total}
 
 
+@app.get("/ping")
+def ping(msg: str = "pong"):
+    """Liveness check that echoes an optional message."""
+    from datetime import datetime as _dt
+    return {"reply": msg, "server_time": _dt.utcnow().isoformat()}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

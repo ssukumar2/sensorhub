@@ -1677,3 +1677,16 @@ def test_readings_total_counts():
     _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
     after = client.get("/readings/total").json()["total_readings"]
     assert after >= before + 1
+
+
+def test_ping_default():
+    response = client.get("/ping")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["reply"] == "pong"
+    assert "server_time" in body
+
+
+def test_ping_echo():
+    response = client.get("/ping?msg=hello")
+    assert response.json()["reply"] == "hello"
