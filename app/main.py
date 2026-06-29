@@ -1646,6 +1646,13 @@ def rename_sensor(
     return {"sensor_id": sensor_id, "name": sensor.name}
 
 
+@app.get("/sensors/{sensor_id}/exists")
+def sensor_exists(sensor_id: int, session: Session = Depends(get_session)):
+    """Return whether a sensor exists without raising 404."""
+    sensor = session.get(Sensor, sensor_id)
+    return {"sensor_id": sensor_id, "exists": sensor is not None}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

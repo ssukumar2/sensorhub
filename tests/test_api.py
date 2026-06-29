@@ -1647,3 +1647,16 @@ def test_rename_sensor_requires_auth():
 def test_rename_sensor_validation():
     reg = client.post("/sensors", json={"name": "rn-bad", "location": "lab"}).json()
     assert client.post(f"/sensors/{reg['id']}/rename?name=", headers={"x-api-key": reg["api_key"]}).status_code == 400
+
+
+def test_sensor_exists_true():
+    reg = client.post("/sensors", json={"name": "exists-yes", "location": "lab"}).json()
+    response = client.get(f"/sensors/{reg['id']}/exists")
+    assert response.status_code == 200
+    assert response.json()["exists"] is True
+
+
+def test_sensor_exists_false():
+    response = client.get("/sensors/99999/exists")
+    assert response.status_code == 200
+    assert response.json()["exists"] is False
