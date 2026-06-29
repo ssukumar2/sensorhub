@@ -1663,6 +1663,13 @@ def count_by_location(session: Session = Depends(get_session)):
     return counts
 
 
+@app.get("/readings/total")
+def readings_total(session: Session = Depends(get_session)):
+    """Return the total number of readings stored across all sensors."""
+    total = len(session.exec(select(Reading)).all())
+    return {"total_readings": total}
+
+
 @app.get("/sensors/{sensor_id}", response_model=Sensor)
 def get_sensor(sensor_id: int, session: Session = Depends(get_session)):
     """Get one sensor by ID."""

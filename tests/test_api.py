@@ -1669,3 +1669,11 @@ def test_count_by_location():
     assert response.status_code == 200
     body = response.json()
     assert body.get("depot-x", 0) >= 2
+
+
+def test_readings_total_counts():
+    before = client.get("/readings/total").json()["total_readings"]
+    reg = client.post("/sensors", json={"name": "total-test", "location": "lab"}).json()
+    _signed_post("/readings", {"sensor_id": reg["id"], "value": 1.0, "unit": "celsius"}, reg["api_key"])
+    after = client.get("/readings/total").json()["total_readings"]
+    assert after >= before + 1
