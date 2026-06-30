@@ -18,6 +18,7 @@ from app.models import (
     Reading,
     SensorCreate,
     ReadingCreate,
+    AlertRuleDB,
 )
 from app.security.dependencies import require_signed_sensor
 from app.firmware import tracker as firmware_tracker
