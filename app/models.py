@@ -61,3 +61,12 @@ class ReadingCreate(SQLModel):
 class SensorUpdate(SQLModel):
     name: Optional[str] = None
     location: Optional[str] = None
+
+
+class AlertRuleDB(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    sensor_id: int = Field(index=True)
+    metric: str = "value"
+    threshold_high: Optional[float] = None
+    threshold_low: Optional[float] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
