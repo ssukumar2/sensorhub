@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
     StatsReporter stats(60);
     stats.start();
 
-    const std::string current_version = "0.1.0";
+    constexpr const char* current_version = "0.1.0";  // bump on each release
     FirmwareClient firmware(cfg.backend_url);
     firmware.report(sensor.id, sensor.api_key, current_version, __DATE__);
 
@@ -114,6 +114,7 @@ int main(int argc, char* argv[])
     std::uniform_real_distribution<double> temp_dist(18.0, 28.0);
     int count = 0;
     const int interval = cfg.interval_seconds;
+    Logger::instance().info("interval: " + std::to_string(interval) + "s");
 
     CommandClient commands(cfg.backend_url);
     ConnectionManager conn_mgr(5, 5);
@@ -158,7 +159,7 @@ int main(int argc, char* argv[])
             std::cerr << "failed to open " << cfg.can_iface << std::endl;
             return 1;
         }
-        std::cout << "CAN mode on vcan0. starting loop..." << std::endl;
+        Logger::instance().info("CAN mode on " + cfg.can_iface + ", starting loop");
 
         while (SignalHandler::instance().keep_running())
         {
@@ -212,7 +213,8 @@ int main(int argc, char* argv[])
                 }
             }
             RetryPolicy retry(3, 200, 2000);
-            bool ok = retry.run([&]() { return http.submit_reading(sensor, t, "celsius"); });
+            const std::string unit = "celsius";  // TODO: read from sensor config
+            bool ok = retry.run([&]() { return http.submit_reading(sensor, t, unit); });
             if (ok) 
             {
                 ++count;
