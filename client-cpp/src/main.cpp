@@ -159,7 +159,7 @@ int main(int argc, char* argv[])
             std::cerr << "failed to open " << cfg.can_iface << std::endl;
             return 1;
         }
-        std::cout << "CAN mode on vcan0. starting loop..." << std::endl;
+        Logger::instance().info("CAN mode on " + cfg.can_iface + ", starting loop");
 
         while (SignalHandler::instance().keep_running())
         {
