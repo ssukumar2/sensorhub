@@ -213,7 +213,8 @@ int main(int argc, char* argv[])
                 }
             }
             RetryPolicy retry(3, 200, 2000);
-            bool ok = retry.run([&]() { return http.submit_reading(sensor, t, "celsius"); });
+            const std::string unit = "celsius";  // TODO: read from sensor config
+            bool ok = retry.run([&]() { return http.submit_reading(sensor, t, unit); });
             if (ok) 
             {
                 ++count;
