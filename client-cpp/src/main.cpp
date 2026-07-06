@@ -114,6 +114,7 @@ int main(int argc, char* argv[])
     std::uniform_real_distribution<double> temp_dist(18.0, 28.0);
     int count = 0;
     const int interval = cfg.interval_seconds;
+    Logger::instance().info("interval: " + std::to_string(interval) + "s");
 
     CommandClient commands(cfg.backend_url);
     ConnectionManager conn_mgr(5, 5);
