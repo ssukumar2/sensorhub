@@ -97,7 +97,7 @@ int main(int argc, char* argv[])
     StatsReporter stats(60);
     stats.start();
 
-    const std::string current_version = "0.1.0";
+    constexpr const char* current_version = "0.1.0";  // bump on each release
     FirmwareClient firmware(cfg.backend_url);
     firmware.report(sensor.id, sensor.api_key, current_version, __DATE__);
 
