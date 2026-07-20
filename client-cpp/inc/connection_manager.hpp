@@ -1,6 +1,7 @@
 #pragma once
 
 #include "logger.hpp"
+#include <functional>
 
 #include <atomic>
 #include <chrono>
