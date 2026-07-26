@@ -14,6 +14,8 @@
 
 #include "can_transport.hpp"
 #include "sensor_message.hpp"
+#include "reading_validator.hpp"
+#include "sensor_config.hpp"
 
 #include <chrono>
 #include <csignal>
@@ -214,6 +216,13 @@ int main(int argc, char* argv[])
             }
             RetryPolicy retry(3, 200, 2000);
             const std::string unit = "celsius";  // TODO: read from sensor config
+            SensorConfig scfg;
+            scfg.unit = unit;
+            if (!ReadingValidator::check_and_log(t, scfg))
+            {
+                MetricsCollector::instance().record_failure();
+                continue;
+            }
             bool ok = retry.run([&]() { return http.submit_reading(sensor, t, unit); });
             if (ok) 
             {
