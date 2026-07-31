@@ -27,6 +27,7 @@ ClientConfig ClientConfig::from_args(int argc, char* argv[])
         else if (arg.rfind("--interval=", 0) == 0) c.interval_seconds = std::stoi(arg.substr(11));
         else if (arg.rfind("--log-level=", 0) == 0) c.log_level = arg.substr(12);
         else if (arg == "--no-health-check") c.health_check = false;
+        else if (arg.rfind("--smooth=", 0) == 0) c.smooth_window = std::stoi(arg.substr(9));
     }
     return c;
 }

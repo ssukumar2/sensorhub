@@ -13,6 +13,7 @@ struct ClientConfig
     int interval_seconds = 5;
     std::string log_level = "info";
     bool health_check = true;
+    int smooth_window = 3;  // moving average window size
 
     static ClientConfig from_args(int argc, char* argv[]);
 };
